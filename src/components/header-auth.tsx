@@ -83,7 +83,7 @@ export function HeaderAuth() {
           onClick={handleGoogleSignIn}
           type="button"
         >
-          Sign in with Google
+          Sign In
         </button>
         {error ? (
           <p className="max-w-56 text-right text-xs leading-5 text-red-300">
