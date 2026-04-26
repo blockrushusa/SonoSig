@@ -36,3 +36,15 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Firebase
+
+This project is wired for Firebase Authentication, Cloud Firestore, local emulators, and Firebase App Hosting.
+
+1. Create a Firebase project and web app in the Firebase console.
+2. Copy `.env.example` to `.env.local` and fill in the `NEXT_PUBLIC_FIREBASE_*` values.
+3. Enable the Authentication providers you want to use. The starter panel expects email/password and anonymous sign-in.
+4. Create a Firestore database, then deploy rules with `npm run firebase:deploy:rules -- --project <project-id>`.
+5. For local Firebase services, set `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true` and run `npm run firebase:emulators -- --project <project-id>`.
+
+Firebase App Hosting uses `apphosting.yaml` from the repository root. Connect the GitHub repo to an App Hosting backend in Firebase, then pushes to the live branch can trigger rollouts.

@@ -9,11 +9,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "firebase:emulators": "firebase emulators:start --only auth,firestore,hosting",
+    "firebase:deploy": "firebase deploy --only firestore,hosting",
+    "firebase:deploy:rules": "firebase deploy --only firestore"
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "^2.2.10",
     "@tanstack/react-query": "^5.100.5",
+    "firebase": "^12.12.1",
+    "firebase-admin": "^13.8.0",
     "next": "16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -21,6 +26,7 @@
     "wagmi": "^2.19.5"
   },
   "overrides": {
+    "axios": "1.15.0",
     "postcss": "8.5.12"
   },
   "devDependencies": {
@@ -30,6 +36,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "firebase-tools": "^15.15.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

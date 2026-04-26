@@ -1,0 +1,27 @@
+# Firebase App Hosting is the recommended Firebase target for full-stack Next.js.
+# Add real environment values in the Firebase console or in environment-specific
+# apphosting.<environment>.yaml files when the backend exists.
+runConfig:
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyBH0p_hMFV44MezMXZFcfYtjpgjLaeF9uI"
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "sonosig-dotcom.firebaseapp.com"
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "sonosig-dotcom"
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "sonosig-dotcom.firebasestorage.app"
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "174579101715"
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:174579101715:web:08705b2a35f9fbe6694fe6"
+  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: "G-B9HBX0GPYL"
+  - variable: NEXT_PUBLIC_USE_FIREBASE_EMULATORS
+    value: "false"

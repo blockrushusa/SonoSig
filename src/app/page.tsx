@@ -1,4 +1,5 @@
 import { WalletConnect } from "@/components/wallet-connect";
+import { FirebaseAuthPanel } from "@/components/firebase-auth-panel";
 
 export default function Home() {
   return (
@@ -16,7 +17,7 @@ export default function Home() {
       <section className="grid flex-1 items-center gap-10 px-6 py-12 lg:grid-cols-[1fr_420px] lg:px-16">
         <div className="max-w-3xl">
           <p className="mb-5 text-sm font-medium uppercase tracking-[0.18em] text-zinc-400">
-            Next.js · React · TypeScript · wagmi · viem · RainbowKit
+            Next.js · React · TypeScript · wagmi · viem · RainbowKit · Firebase
           </p>
           <h2 className="text-5xl font-semibold leading-tight text-white">
             Connect a wallet to anchor audio proofs.
@@ -38,6 +39,10 @@ export default function Home() {
             <WalletConnect />
           </div>
         </div>
+      </section>
+
+      <section className="px-6 pb-12 lg:px-16">
+        <FirebaseAuthPanel />
       </section>
     </main>
   );

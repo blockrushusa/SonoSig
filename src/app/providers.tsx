@@ -14,7 +14,7 @@ import { http } from "viem";
 import { useState, type ReactNode } from "react";
 
 const projectId =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "YOUR_PROJECT_ID";
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "YOUR_PROJECT_ID";
 
 const config = getDefaultConfig({
   appName: "Sonosig",
