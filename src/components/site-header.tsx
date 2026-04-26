@@ -4,6 +4,7 @@ import { WalletConnect } from "@/components/wallet-connect";
 
 const navItems = [
   { href: "/create", label: "Create" },
+  { href: "/verify", label: "Verify" },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
   { href: "/dashboard", label: "Dashboard" },
