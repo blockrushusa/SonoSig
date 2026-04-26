@@ -5,8 +5,9 @@ const HEADER_BYTES = MAGIC.length + 4;
 
 export const STATEMENT =
   "Create a Sonosig wallet-linked proof payload for this local audio file.";
+export const VERIFIED_BY = "Sonosig.com";
 
-export type OutputFormat = "wav" | "aiff";
+export type OutputFormat = "wav" | "aiff" | "m4a";
 
 export const OUTPUT_FORMATS: Array<{
   value: OutputFormat;
@@ -15,6 +16,7 @@ export const OUTPUT_FORMATS: Array<{
 }> = [
   { value: "wav", label: "WAV", mimeType: "audio/wav" },
   { value: "aiff", label: "AIFF", mimeType: "audio/aiff" },
+  { value: "m4a", label: "M4A", mimeType: "audio/mp4" },
 ];
 
 export type ProofPayload = {
@@ -26,6 +28,7 @@ export type ProofPayload = {
   nonce: string;
   issuedAt: string;
   statement: string;
+  verifiedBy?: string;
   signature: Hex;
 };
 
@@ -38,6 +41,7 @@ export function createSiweFields(address: `0x${string}`, chainId: number) {
     nonce: createNonce(),
     issuedAt: new Date().toISOString(),
     statement: STATEMENT,
+    verifiedBy: VERIFIED_BY,
   };
 }
 
@@ -49,11 +53,14 @@ export function buildSiweMessage({
   nonce,
   statement,
   uri,
+  verifiedBy,
 }: Omit<ProofPayload, "v" | "signature">) {
+  const verifiedByLine = verifiedBy ? `\nVerified By: ${verifiedBy}` : "";
+
   return `${domain} wants you to sign in with your Ethereum account:
 ${address}
 
-${statement}
+${statement}${verifiedByLine}
 
 URI: ${uri}
 Version: 1
@@ -112,7 +119,68 @@ export function encodeWatermarkedPcm(
 }
 
 export function readPayloadFromAudio(bytes: Uint8Array): ProofPayload {
-  const pcm = readPcm16Audio(bytes);
+  try {
+    return readPayloadFromPcm(readPcm16Audio(bytes));
+  } catch (error) {
+    const taggedPayload = readPayloadFromTaggedBytes(bytes);
+
+    if (taggedPayload) {
+      return taggedPayload;
+    }
+
+    throw error;
+  }
+}
+
+export async function writeAudioFile(
+  audio: { pcm: Int16Array; channels: number; sampleRate: number },
+  format: OutputFormat,
+  payloadBytes: Uint8Array,
+) {
+  if (format === "aiff") {
+    const outputBytes = writeAiff(audio.pcm, audio.channels, audio.sampleRate);
+    return new Blob([toArrayBuffer(outputBytes)], {
+      type: getOutputFormat(format).mimeType,
+    });
+  }
+
+  if (format === "m4a") {
+    const m4aBlob = await writeM4a(audio.pcm, audio.channels, audio.sampleRate);
+    return new Blob([m4aBlob, toArrayBuffer(payloadBytes)], {
+      type: getOutputFormat(format).mimeType,
+    });
+  }
+
+  const outputBytes = writeWav(audio.pcm, audio.channels, audio.sampleRate);
+  return new Blob([toArrayBuffer(outputBytes)], {
+    type: getOutputFormat(format).mimeType,
+  });
+}
+
+export function getOutputFormat(format: OutputFormat) {
+  return OUTPUT_FORMATS.find((item) => item.value === format) ?? OUTPUT_FORMATS[0];
+}
+
+export function inferOutputFormat(file: File | null): OutputFormat {
+  const extension = file?.name.split(".").pop()?.toLowerCase();
+
+  if (extension === "aif" || extension === "aiff") {
+    return "aiff";
+  }
+
+  if (extension === "m4a") {
+    return "m4a";
+  }
+
+  return "wav";
+}
+
+export function createOutputName(fileName: string, format: OutputFormat) {
+  const baseName = fileName.replace(/\.[^.]+$/, "");
+  return `${baseName || "audio"}-sonosig.${format}`;
+}
+
+function readPayloadFromPcm(pcm: Int16Array) {
   const header = readBytesFromPcm(pcm, HEADER_BYTES);
   const magic = new TextDecoder().decode(header.slice(0, MAGIC.length));
 
@@ -139,36 +207,6 @@ export function readPayloadFromAudio(bytes: Uint8Array): ProofPayload {
   }
 
   return payload;
-}
-
-export function writeAudioFile(
-  audio: { pcm: Int16Array; channels: number; sampleRate: number },
-  format: OutputFormat,
-) {
-  if (format === "aiff") {
-    return writeAiff(audio.pcm, audio.channels, audio.sampleRate);
-  }
-
-  return writeWav(audio.pcm, audio.channels, audio.sampleRate);
-}
-
-export function getOutputFormat(format: OutputFormat) {
-  return OUTPUT_FORMATS.find((item) => item.value === format) ?? OUTPUT_FORMATS[0];
-}
-
-export function inferOutputFormat(file: File | null): OutputFormat {
-  const extension = file?.name.split(".").pop()?.toLowerCase();
-
-  if (extension === "aif" || extension === "aiff") {
-    return "aiff";
-  }
-
-  return "wav";
-}
-
-export function createOutputName(fileName: string, format: OutputFormat) {
-  const baseName = fileName.replace(/\.[^.]+$/, "");
-  return `${baseName || "audio"}-sonosig.${format}`;
 }
 
 function createNonce() {
@@ -209,6 +247,35 @@ function readBytesFromPcm(pcm: Int16Array, byteCount: number) {
   }
 
   return bytes;
+}
+
+function readPayloadFromTaggedBytes(bytes: Uint8Array) {
+  for (let offset = bytes.length - HEADER_BYTES; offset >= 0; offset -= 1) {
+    if (readAscii(bytes, offset, MAGIC.length) !== MAGIC) {
+      continue;
+    }
+
+    const payloadLength = new DataView(
+      bytes.buffer,
+      bytes.byteOffset + offset,
+    ).getUint32(MAGIC.length, true);
+    const payloadStart = offset + HEADER_BYTES;
+    const payloadEnd = payloadStart + payloadLength;
+
+    if (payloadLength <= 0 || payloadLength > 16_384 || payloadEnd > bytes.length) {
+      continue;
+    }
+
+    const payload = JSON.parse(
+      new TextDecoder().decode(bytes.slice(payloadStart, payloadEnd)),
+    );
+
+    if (isProofPayload(payload)) {
+      return payload;
+    }
+  }
+
+  return null;
 }
 
 function readWavPcm16(bytes: Uint8Array) {
@@ -355,6 +422,71 @@ function writeAiff(pcm: Int16Array, channels: number, sampleRate: number) {
   return output;
 }
 
+async function writeM4a(pcm: Int16Array, channels: number, sampleRate: number) {
+  const mimeType = getSupportedM4aMimeType();
+
+  if (!mimeType) {
+    throw new Error("This browser does not support local M4A export.");
+  }
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  const audioContext = new AudioContextClass({ sampleRate });
+  const audioBuffer = audioContext.createBuffer(
+    channels,
+    pcm.length / channels,
+    sampleRate,
+  );
+
+  for (let channel = 0; channel < channels; channel += 1) {
+    const channelData = audioBuffer.getChannelData(channel);
+
+    for (let frame = 0; frame < audioBuffer.length; frame += 1) {
+      channelData[frame] = pcm[frame * channels + channel] / 32768;
+    }
+  }
+
+  const destination = audioContext.createMediaStreamDestination();
+  const source = audioContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(destination);
+
+  const recorder = new MediaRecorder(destination.stream, { mimeType });
+  const chunks: BlobPart[] = [];
+
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size > 0) {
+      chunks.push(event.data);
+    }
+  });
+
+  const stopped = new Promise<Blob>((resolve, reject) => {
+    recorder.addEventListener("stop", () => {
+      resolve(new Blob(chunks, { type: mimeType }));
+    });
+    recorder.addEventListener("error", () => {
+      reject(new Error("M4A export failed."));
+    });
+  });
+
+  recorder.start();
+  source.start();
+
+  await new Promise<void>((resolve) => {
+    source.addEventListener("ended", () => {
+      resolve();
+    });
+  });
+
+  if (recorder.state !== "inactive") {
+    recorder.stop();
+  }
+
+  const blob = await stopped;
+  await audioContext.close();
+
+  return blob;
+}
+
 function floatToInt16(sample: number) {
   const clamped = Math.max(-1, Math.min(1, sample));
   return clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767);
@@ -368,6 +500,12 @@ function writeAscii(bytes: Uint8Array, offset: number, value: string) {
   for (let index = 0; index < value.length; index += 1) {
     bytes[offset + index] = value.charCodeAt(index);
   }
+}
+
+function toArrayBuffer(bytes: Uint8Array) {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 function writeExtended80(bytes: Uint8Array, offset: number, value: number) {
@@ -408,9 +546,17 @@ function isProofPayload(value: unknown): value is ProofPayload {
     typeof payload.nonce === "string" &&
     typeof payload.issuedAt === "string" &&
     typeof payload.statement === "string" &&
+    (typeof payload.verifiedBy === "undefined" ||
+      typeof payload.verifiedBy === "string") &&
     typeof payload.signature === "string" &&
     payload.signature.startsWith("0x")
   );
+}
+
+function getSupportedM4aMimeType() {
+  const mimeTypes = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4"];
+
+  return mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
 }
 
 declare global {

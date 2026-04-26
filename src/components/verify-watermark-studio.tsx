@@ -73,7 +73,7 @@ export function VerifyWatermarkStudio() {
         Verify a file.
       </h1>
       <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-300">
-        Select a watermarked WAV or AIFF and verify the embedded wallet
+        Select a watermarked WAV, AIFF, or M4A and verify the embedded wallet
         signature locally in the browser.
       </p>
 
@@ -83,7 +83,7 @@ export function VerifyWatermarkStudio() {
             Watermarked audio file
           </span>
           <input
-            accept="audio/wav,audio/aiff,.wav,.aif,.aiff"
+            accept="audio/wav,audio/aiff,audio/mp4,.wav,.aif,.aiff,.m4a"
             className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950"
             disabled={isVerifying}
             onChange={(event) => {
@@ -129,6 +129,10 @@ export function VerifyWatermarkStudio() {
               <div>
                 <dt className="text-zinc-500">Chain ID</dt>
                 <dd>{verification.payload.chainId}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Verified by</dt>
+                <dd>{verification.payload.verifiedBy ?? "Sonosig.com"}</dd>
               </div>
             </dl>
           )}

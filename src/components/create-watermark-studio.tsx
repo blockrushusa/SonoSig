@@ -29,7 +29,8 @@ export function CreateWatermarkStudio() {
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("wav");
   const [encodedAudio, setEncodedAudio] = useState<EncodedAudio | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [status, setStatus] = useState("Connect a wallet and choose an audio file.");
+  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [status, setStatus] = useState("");
   const [isEncoding, setIsEncoding] = useState(false);
   const outputUrlRef = useRef<string | null>(null);
 
@@ -68,10 +69,11 @@ export function CreateWatermarkStudio() {
 
       setStatus("Embedding proof payload...");
       const watermarked = encodeWatermarkedPcm(audioBuffer, payloadBytes);
-      const outputBytes = writeAudioFile(watermarked, outputFormat);
-      const blob = new Blob([outputBytes], {
-        type: getOutputFormat(outputFormat).mimeType,
-      });
+      const blob = await writeAudioFile(
+        watermarked,
+        outputFormat,
+        payloadBytes,
+      );
       const url = URL.createObjectURL(blob);
 
       if (outputUrlRef.current) {
@@ -100,13 +102,6 @@ export function CreateWatermarkStudio() {
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
               Create
             </p>
-            <h1 className="mt-5 text-4xl font-semibold leading-tight text-white md:text-5xl">
-              Link an audio file to your wallet.
-            </h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-300">
-              Sign a SIWE message, embed the proof payload into a local audio
-              file, and export a watermarked file in the browser.
-            </p>
           </div>
           <button
             className="w-fit rounded-md border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10 hover:text-white"
@@ -119,10 +114,8 @@ export function CreateWatermarkStudio() {
 
         <div className="mt-8 grid gap-4">
           <label className="grid gap-2">
-            <span className="text-sm font-medium text-zinc-200">
-              Local audio file
-            </span>
             <input
+              aria-label="Choose an audio file"
               accept="audio/*"
               className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950"
               onChange={(event) => {
@@ -135,29 +128,52 @@ export function CreateWatermarkStudio() {
             />
           </label>
 
-          <label className="grid max-w-xs gap-2">
-            <span className="text-sm font-medium text-zinc-200">
-              Download format
-            </span>
-            <select
-              className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
-              onChange={(event) => {
-                setOutputFormat(event.target.value as OutputFormat);
-                setEncodedAudio(null);
-              }}
-              value={outputFormat}
+          <section className="rounded-lg border border-white/10 bg-zinc-950/40">
+            <button
+              aria-controls="create-options"
+              aria-expanded={isOptionsOpen}
+              className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
+              onClick={() => setIsOptionsOpen((value) => !value)}
+              type="button"
             >
-              {OUTPUT_FORMATS.map((format) => (
-                <option key={format.value} value={format.value}>
-                  {format.label}
-                </option>
-              ))}
-            </select>
-            <span className="text-xs leading-5 text-zinc-500">
-              Defaults to the uploaded file format when it is WAV or AIFF. Lossy
-              formats are not exported yet.
-            </span>
-          </label>
+              <span className="flex items-center gap-3">
+                <span aria-hidden="true" className="text-lg leading-none">
+                  ⚙
+                </span>
+                <span>Options</span>
+              </span>
+              <span className="text-xs uppercase tracking-[0.14em] text-zinc-500">
+                {isOptionsOpen ? "Hide" : "Show"}
+              </span>
+            </button>
+
+            {isOptionsOpen ? (
+              <div
+                className="border-t border-white/10 px-4 py-4"
+                id="create-options"
+              >
+                <label className="grid max-w-xs gap-2">
+                  <span className="text-sm font-medium text-zinc-200">
+                    Download format
+                  </span>
+                  <select
+                    className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
+                    onChange={(event) => {
+                      setOutputFormat(event.target.value as OutputFormat);
+                      setEncodedAudio(null);
+                    }}
+                    value={outputFormat}
+                  >
+                    {OUTPUT_FORMATS.map((format) => (
+                      <option key={format.value} value={format.value}>
+                        {format.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+          </section>
 
           <button
             className="w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
@@ -165,10 +181,12 @@ export function CreateWatermarkStudio() {
             onClick={handleEncode}
             type="button"
           >
-            {isEncoding || isPending ? "Encoding..." : "Sign and Encode"}
+            {isEncoding || isPending ? "Encoding..." : "Continue"}
           </button>
 
-          <p className="text-sm leading-6 text-zinc-400">{status}</p>
+          {status ? (
+            <p className="text-sm leading-6 text-zinc-400">{status}</p>
+          ) : null}
         </div>
 
         {encodedAudio ? (
@@ -210,7 +228,7 @@ export function CreateWatermarkStudio() {
                   className="mt-3 text-2xl font-semibold text-white"
                   id="create-help-title"
                 >
-                  Client-side only
+                  Link an audio file to your wallet.
                 </h2>
               </div>
               <button
@@ -221,6 +239,13 @@ export function CreateWatermarkStudio() {
                 Close
               </button>
             </div>
+            <p className="mt-6 text-sm leading-6 text-zinc-300">
+              Sign a SIWE message, embed the proof payload into a local audio
+              file, and export a watermarked file in the browser.
+            </p>
+            <h3 className="mt-6 text-base font-semibold text-white">
+              Client-side only
+            </h3>
             <ul className="mt-6 grid gap-3 text-sm leading-6 text-zinc-300">
               <li>Audio files are decoded in this browser only.</li>
               <li>
