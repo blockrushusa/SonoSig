@@ -3,6 +3,7 @@ import { HeaderAuth } from "@/components/header-auth";
 import { WalletConnect } from "@/components/wallet-connect";
 
 const navItems = [
+  { href: "/create", label: "Create" },
   { href: "/about", label: "About" },
   { href: "/contact", label: "Contact" },
   { href: "/dashboard", label: "Dashboard" },
