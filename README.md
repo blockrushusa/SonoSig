@@ -37,8 +37,10 @@ This project is wired for Firebase Authentication, Cloud Firestore, local emulat
 
 1. Create a Firebase project and web app in the Firebase console.
 2. Copy `.env.example` to `.env.local` and fill in the `NEXT_PUBLIC_FIREBASE_*` values.
-3. Enable the Authentication providers you want to use. The starter panel expects email/password and anonymous sign-in.
+3. Enable Google Authentication. The header account control uses Google popup sign-in.
 4. Create a Firestore database, then deploy rules with `npm run firebase:deploy:rules -- --project <project-id>`.
 5. For local Firebase services, set `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true` and run `npm run firebase:emulators -- --project <project-id>`.
 
 Firebase App Hosting uses `apphosting.yaml` from the repository root. Connect the GitHub repo to an App Hosting backend in Firebase, then pushes to the live branch can trigger rollouts.
+
+For Safari and mobile auth notes, see [Firebase Auth on Safari and Mobile](./docs/firebase-auth-safari.md).

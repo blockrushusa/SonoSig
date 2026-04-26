@@ -1,17 +1,21 @@
 import { WalletConnect } from "@/components/wallet-connect";
-import { FirebaseAuthPanel } from "@/components/firebase-auth-panel";
+import { HeaderAuth } from "@/components/header-auth";
+import { ProofDraftCard } from "@/components/proof-draft-card";
 
 export default function Home() {
   return (
     <main className="flex min-h-dvh flex-1 flex-col bg-[#0e1116] text-zinc-50">
-      <header className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+      <header className="flex flex-col gap-4 border-b border-white/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
             Sonosig
           </p>
           <h1 className="text-xl font-semibold">Audio Signature Console</h1>
         </div>
-        <WalletConnect />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <WalletConnect />
+          <HeaderAuth />
+        </div>
       </header>
 
       <section className="grid flex-1 items-center gap-10 px-6 py-12 lg:grid-cols-[1fr_420px] lg:px-16">
@@ -42,7 +46,7 @@ export default function Home() {
       </section>
 
       <section className="px-6 pb-12 lg:px-16">
-        <FirebaseAuthPanel />
+        <ProofDraftCard />
       </section>
     </main>
   );
