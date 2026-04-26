@@ -12,7 +12,9 @@
     "lint": "eslint",
     "firebase:emulators": "firebase emulators:start --only auth,firestore,hosting",
     "firebase:deploy": "firebase deploy --only firestore,hosting",
-    "firebase:deploy:rules": "firebase deploy --only firestore"
+    "firebase:deploy:rules": "firebase deploy --only firestore",
+    "dns:porkbun:check": "node scripts/sync-porkbun-firebase-dns.mjs check",
+    "dns:porkbun:sync": "node scripts/sync-porkbun-firebase-dns.mjs sync"
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "^2.2.10",
