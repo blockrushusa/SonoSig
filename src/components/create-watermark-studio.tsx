@@ -97,20 +97,58 @@ export function CreateWatermarkStudio() {
   return (
     <div>
       <section className="rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30">
-        <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-start justify-between gap-5">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
               Create
             </p>
           </div>
-          <button
-            className="w-fit rounded-md border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10 hover:text-white"
-            onClick={() => setIsHelpOpen(true)}
-            type="button"
-          >
-            Help
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              aria-controls="create-options"
+              aria-expanded={isOptionsOpen}
+              aria-label="Settings"
+              className="grid h-12 w-12 place-items-center rounded-md border border-white/10 text-3xl text-zinc-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+              onClick={() => setIsOptionsOpen((value) => !value)}
+              title="Settings"
+              type="button"
+            >
+              <span aria-hidden="true">⚙</span>
+            </button>
+            <button
+              className="h-9 rounded-md border border-white/10 px-3 text-sm font-semibold text-zinc-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+              onClick={() => setIsHelpOpen(true)}
+              type="button"
+            >
+              Help
+            </button>
+          </div>
         </div>
+
+        {isOptionsOpen ? (
+          <div className="mt-4 flex justify-end" id="create-options">
+            <div className="flex items-center gap-2 rounded-md border border-white/10 bg-zinc-950/70 p-1">
+              {OUTPUT_FORMATS.map((format) => (
+                <button
+                  aria-pressed={outputFormat === format.value}
+                  className={
+                    outputFormat === format.value
+                      ? "rounded px-3 py-1.5 text-sm font-semibold text-cyan-950 bg-cyan-300"
+                      : "rounded px-3 py-1.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                  }
+                  key={format.value}
+                  onClick={() => {
+                    setOutputFormat(format.value);
+                    setEncodedAudio(null);
+                  }}
+                  type="button"
+                >
+                  {format.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-8 grid gap-4">
           <label className="grid gap-2">
@@ -128,55 +166,8 @@ export function CreateWatermarkStudio() {
             />
           </label>
 
-          <section className="rounded-lg border border-white/10 bg-zinc-950/40">
-            <button
-              aria-controls="create-options"
-              aria-expanded={isOptionsOpen}
-              className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm font-semibold text-zinc-200 transition hover:bg-white/5"
-              onClick={() => setIsOptionsOpen((value) => !value)}
-              type="button"
-            >
-              <span className="flex items-center gap-3">
-                <span aria-hidden="true" className="text-lg leading-none">
-                  ⚙
-                </span>
-                <span>Options</span>
-              </span>
-              <span className="text-xs uppercase tracking-[0.14em] text-zinc-500">
-                {isOptionsOpen ? "Hide" : "Show"}
-              </span>
-            </button>
-
-            {isOptionsOpen ? (
-              <div
-                className="border-t border-white/10 px-4 py-4"
-                id="create-options"
-              >
-                <label className="grid max-w-xs gap-2">
-                  <span className="text-sm font-medium text-zinc-200">
-                    Download format
-                  </span>
-                  <select
-                    className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
-                    onChange={(event) => {
-                      setOutputFormat(event.target.value as OutputFormat);
-                      setEncodedAudio(null);
-                    }}
-                    value={outputFormat}
-                  >
-                    {OUTPUT_FORMATS.map((format) => (
-                      <option key={format.value} value={format.value}>
-                        {format.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            ) : null}
-          </section>
-
           <button
-            className="w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+            className="ml-auto w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!canEncode || isEncoding || isPending}
             onClick={handleEncode}
             type="button"

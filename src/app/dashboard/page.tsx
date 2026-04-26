@@ -1,14 +1,14 @@
 import { AuthGate } from "@/components/auth-gate";
-import { PlaceholderPage } from "@/components/placeholder-page";
+import { DashboardWorkspace } from "@/components/dashboard-workspace";
+import { SiteHeader } from "@/components/site-header";
 
 export default function DashboardPage() {
   return (
-    <AuthGate>
-      <PlaceholderPage
-        description="This page will become the authenticated workspace for managing audio proofs, wallets, and verification history."
-        eyebrow="Dashboard"
-        title="Dashboard"
-      />
-    </AuthGate>
+    <main className="flex min-h-dvh flex-1 flex-col bg-[#0e1116] text-zinc-50">
+      <SiteHeader />
+      <AuthGate>
+        <DashboardWorkspace />
+      </AuthGate>
+    </main>
   );
 }
