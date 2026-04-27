@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 
 const DONATION_ADDRESS = "0x769376098c803F9636aE9b33B4d158bEa2342a95";
@@ -22,6 +23,12 @@ export default function AboutPage() {
               Sonosig is a work in progress for the ETHGlobal Open Agents 2026
               Hackathon. Developed by Blockrush.
             </p>
+            <Link
+              className="mt-8 inline-flex rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200"
+              href="/faq"
+            >
+              Read the FAQ
+            </Link>
           </div>
 
           <aside className="rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-6 shadow-2xl shadow-cyan-950/20">
