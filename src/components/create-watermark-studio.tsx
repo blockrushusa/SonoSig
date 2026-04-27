@@ -13,6 +13,7 @@ import {
   inferOutputFormat,
   writeAudioFile,
   type OutputFormat,
+  type ProofPayload,
 } from "@/lib/audio-watermark";
 
 type EncodedAudio = {
@@ -20,6 +21,8 @@ type EncodedAudio = {
   fileName: string;
   format: OutputFormat;
 };
+
+type SongMetadata = NonNullable<ProofPayload["song"]>;
 
 export function CreateWatermarkStudio() {
   const { address, chainId, isConnected } = useAccount();
@@ -36,6 +39,7 @@ export function CreateWatermarkStudio() {
   const [embeddingAddress, setEmbeddingAddress] = useState("");
   const [embeddingProgress, setEmbeddingProgress] = useState(0);
   const [embeddingSignature, setEmbeddingSignature] = useState("");
+  const [songMetadata, setSongMetadata] = useState<SongMetadata>({});
   const outputUrlRef = useRef<string | null>(null);
 
   const canEncode = Boolean(isConnected && address && chainId && sourceFile);
@@ -50,7 +54,11 @@ export function CreateWatermarkStudio() {
     setStatus("Preparing SIWE message...");
 
     try {
-      const siweFields = createSiweFields(address, chainId);
+      const song = cleanSongMetadata(songMetadata);
+      const siweFields = {
+        ...createSiweFields(address, chainId),
+        ...(song ? { song } : {}),
+      };
       const message = buildSiweMessage(siweFields);
       const signature = await signMessageAsync({ message });
       setEmbeddingAddress(address);
@@ -60,6 +68,7 @@ export function CreateWatermarkStudio() {
         ...siweFields,
         signature,
       } as const;
+      localStorage.setItem("sonosig:last-proof", JSON.stringify(payload));
 
       setStatus("Decoding audio locally...");
       const audioBuffer = await decodeAudioFile(sourceFile);
@@ -147,14 +156,14 @@ export function CreateWatermarkStudio() {
         </div>
 
         {isOptionsOpen ? (
-          <div className="mt-4 flex justify-end" id="create-options">
-            <div className="flex items-center gap-2 rounded-md border border-white/10 bg-zinc-950/70 p-1">
+          <div className="mt-4 grid gap-4" id="create-options">
+            <div className="ml-auto flex items-center gap-2 rounded-md border border-white/10 bg-zinc-950/70 p-1">
               {OUTPUT_FORMATS.map((format) => (
                 <button
                   aria-pressed={outputFormat === format.value}
                   className={
                     outputFormat === format.value
-                      ? "rounded px-3 py-1.5 text-sm font-semibold text-cyan-950 bg-cyan-300"
+                      ? "rounded bg-cyan-300 px-3 py-1.5 text-sm font-semibold text-cyan-950"
                       : "rounded px-3 py-1.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
                   }
                   key={format.value}
@@ -167,6 +176,49 @@ export function CreateWatermarkStudio() {
                   {format.label}
                 </button>
               ))}
+            </div>
+            <div className="grid gap-3 rounded-lg border border-white/10 bg-zinc-950/40 p-4 md:grid-cols-2">
+              <MetadataInput
+                label="Song"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, title: value }))
+                }
+                value={songMetadata.title ?? ""}
+              />
+              <MetadataInput
+                label="Artist"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, artist: value }))
+                }
+                value={songMetadata.artist ?? ""}
+              />
+              <MetadataInput
+                label="Album"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, album: value }))
+                }
+                value={songMetadata.album ?? ""}
+              />
+              <MetadataInput
+                label="Year"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, year: value }))
+                }
+                value={songMetadata.year ?? ""}
+              />
+              <label className="grid gap-2 md:col-span-2">
+                <span className="text-sm font-medium text-zinc-300">Notes</span>
+                <textarea
+                  className="min-h-20 rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
+                  onChange={(event) =>
+                    setSongMetadata((metadata) => ({
+                      ...metadata,
+                      notes: event.target.value,
+                    }))
+                  }
+                  value={songMetadata.notes ?? ""}
+                />
+              </label>
             </div>
           </div>
         ) : null}
@@ -419,6 +471,37 @@ function EmbeddingVisualization({
 function repeatHelixText(value: string, count: number) {
   const text = value || "pending";
   return Array.from({ length: count }, () => text).join(" / ");
+}
+
+function MetadataInput({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-sm font-medium text-zinc-300">{label}</span>
+      <input
+        className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      />
+    </label>
+  );
+}
+
+function cleanSongMetadata(metadata: SongMetadata) {
+  const song = Object.fromEntries(
+    Object.entries(metadata)
+      .map(([key, value]) => [key, value?.trim()])
+      .filter((entry): entry is [string, string] => Boolean(entry[1])),
+  ) as SongMetadata;
+
+  return Object.keys(song).length ? song : null;
 }
 
 function formatReadableHex(value: string) {

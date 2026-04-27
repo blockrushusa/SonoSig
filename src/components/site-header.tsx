@@ -8,6 +8,7 @@ import { useAuthUser } from "@/lib/firebase/use-auth-user";
 const navItems = [
   { href: "/create", label: "Create" },
   { href: "/verify", label: "Verify" },
+  { href: "/post", label: "Post" },
   { href: "/faq", label: "FAQ" },
   { href: "/about", label: "About" },
   { href: "/help", label: "Help" },

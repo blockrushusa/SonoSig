@@ -36,6 +36,13 @@ export type ProofPayload = {
   statement: string;
   chain?: string;
   verifiedBy?: string;
+  song?: {
+    title?: string;
+    artist?: string;
+    album?: string;
+    year?: string;
+    notes?: string;
+  };
   signature: Hex;
 };
 
@@ -62,15 +69,27 @@ export function buildSiweMessage({
   statement,
   uri,
   chain,
+  song,
   verifiedBy,
 }: Omit<ProofPayload, "v" | "signature">) {
   const chainLine = chain ? `\nChain: ${chain}` : "";
+  const songLine = song
+    ? `\nSong: ${[
+        song.title,
+        song.artist,
+        song.album,
+        song.year,
+        song.notes,
+      ]
+        .filter(Boolean)
+        .join(" | ")}`
+    : "";
   const verifiedByLine = verifiedBy ? `\nVerified By: ${verifiedBy}` : "";
 
   return `${domain} wants you to sign in with your Ethereum account:
 ${address}
 
-${statement}${chainLine}${verifiedByLine}
+${statement}${chainLine}${songLine}${verifiedByLine}
 
 URI: ${uri}
 Version: 1
@@ -620,6 +639,8 @@ function isProofPayload(value: unknown): value is ProofPayload {
     (typeof payload.chain === "undefined" || typeof payload.chain === "string") &&
     (typeof payload.verifiedBy === "undefined" ||
       typeof payload.verifiedBy === "string") &&
+    (typeof payload.song === "undefined" ||
+      (typeof payload.song === "object" && payload.song !== null)) &&
     typeof payload.signature === "string" &&
     payload.signature.startsWith("0x")
   );
