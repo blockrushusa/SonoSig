@@ -9,6 +9,7 @@ const navItems = [
   { href: "/create", label: "Create" },
   { href: "/verify", label: "Verify" },
   { href: "/about", label: "About" },
+  { href: "/help", label: "Help" },
   { href: "/contact", label: "Contact" },
   { href: "/dashboard", label: "Dashboard" },
 ];
@@ -17,7 +18,7 @@ export function SiteHeader() {
   const { user } = useAuthUser();
   const visibleNavItems = user
     ? navItems
-    : navItems.filter((item) => item.href === "/about");
+    : navItems.filter((item) => item.href === "/about" || item.href === "/help");
 
   return (
     <header className="flex flex-col gap-4 border-b border-white/10 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">

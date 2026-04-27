@@ -5,7 +5,13 @@ const HEADER_BYTES = MAGIC.length + 4;
 
 export const STATEMENT =
   "Create a Sonosig wallet-linked proof payload for this local audio file.";
-export const VERIFIED_BY = "Sonosig.com";
+export const VERIFIED_BY = "SonoSig.com";
+
+const CHAIN_NAMES: Record<number, string> = {
+  1: "Ethereum",
+  8453: "Base",
+  11155111: "Sepolia",
+};
 
 export type OutputFormat = "wav" | "aiff" | "m4a";
 
@@ -28,6 +34,7 @@ export type ProofPayload = {
   nonce: string;
   issuedAt: string;
   statement: string;
+  chain?: string;
   verifiedBy?: string;
   signature: Hex;
 };
@@ -41,6 +48,7 @@ export function createSiweFields(address: `0x${string}`, chainId: number) {
     nonce: createNonce(),
     issuedAt: new Date().toISOString(),
     statement: STATEMENT,
+    chain: getChainName(chainId),
     verifiedBy: VERIFIED_BY,
   };
 }
@@ -53,14 +61,16 @@ export function buildSiweMessage({
   nonce,
   statement,
   uri,
+  chain,
   verifiedBy,
 }: Omit<ProofPayload, "v" | "signature">) {
+  const chainLine = chain ? `\nChain: ${chain}` : "";
   const verifiedByLine = verifiedBy ? `\nVerified By: ${verifiedBy}` : "";
 
   return `${domain} wants you to sign in with your Ethereum account:
 ${address}
 
-${statement}${verifiedByLine}
+${statement}${chainLine}${verifiedByLine}
 
 URI: ${uri}
 Version: 1
@@ -546,11 +556,16 @@ function isProofPayload(value: unknown): value is ProofPayload {
     typeof payload.nonce === "string" &&
     typeof payload.issuedAt === "string" &&
     typeof payload.statement === "string" &&
+    (typeof payload.chain === "undefined" || typeof payload.chain === "string") &&
     (typeof payload.verifiedBy === "undefined" ||
       typeof payload.verifiedBy === "string") &&
     typeof payload.signature === "string" &&
     payload.signature.startsWith("0x")
   );
+}
+
+export function getChainName(chainId: number) {
+  return CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
 }
 
 function getSupportedM4aMimeType() {

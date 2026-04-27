@@ -4,6 +4,7 @@ import { useState } from "react";
 import { verifyMessage } from "viem";
 import {
   buildSiweMessage,
+  getChainName,
   readPayloadFromAudio,
   type ProofPayload,
 } from "@/lib/audio-watermark";
@@ -127,12 +128,19 @@ export function VerifyWatermarkStudio() {
                 <dd>{verification.payload.issuedAt}</dd>
               </div>
               <div>
+                <dt className="text-zinc-500">Chain</dt>
+                <dd>
+                  {verification.payload.chain ??
+                    getChainName(verification.payload.chainId)}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-zinc-500">Chain ID</dt>
                 <dd>{verification.payload.chainId}</dd>
               </div>
               <div>
                 <dt className="text-zinc-500">Verified by</dt>
-                <dd>{verification.payload.verifiedBy ?? "Sonosig.com"}</dd>
+                <dd>{verification.payload.verifiedBy ?? "SonoSig.com"}</dd>
               </div>
             </dl>
           )}

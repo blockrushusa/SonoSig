@@ -67,7 +67,9 @@ export function CreateWatermarkStudio() {
         );
       }
 
-      setStatus("Embedding proof payload...");
+      setStatus(
+        "Embedding proof payload via browser... Client side only.... No audio is uploaded.",
+      );
       const watermarked = encodeWatermarkedPcm(audioBuffer, payloadBytes);
       const blob = await writeAudioFile(
         watermarked,
