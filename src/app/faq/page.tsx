@@ -71,6 +71,11 @@ const faqs = [
       "Audio often leaves the platform where it was uploaded. Embedded proof helps preserve attribution and verification context when a file is downloaded, renamed, sent in a chat, or uploaded somewhere else.",
   },
   {
+    question: "Is the proof tied to the actual audio?",
+    answer:
+      "Yes. SonoSig includes a SHA-256 audio fingerprint in the signed payload. During verification, the browser recomputes the fingerprint from the watermarked WAV or AIFF and rejects files where the audio no longer matches the signed claim.",
+  },
+  {
     question: "Does this replace copyright registration?",
     answer:
       "No. SonoSig creates a technical proof of a signed claim. It can help with provenance and evidence, but it does not replace legal registration, contracts, split sheets, or professional legal advice.",

@@ -2,9 +2,8 @@ import { SiteHeader } from "@/components/site-header";
 
 const encodingSteps = [
   "The selected audio file is decoded by the browser with the Web Audio API.",
-  "SonoSig builds a compact proof payload from the wallet address, chain, SIWE fields, and signature.",
+  "SonoSig fingerprints the decoded audio and signs that fingerprint with the SIWE message.",
   "For WAV and AIFF exports, the payload is embedded into low-order PCM sample bits.",
-  "For M4A exports, the browser encodes the audio locally and the proof payload is attached for local verification.",
   "The finished file is generated as a browser download. No audio is uploaded.",
 ];
 

@@ -13,6 +13,12 @@ const CHAIN_NAMES: Record<number, string> = {
   11155111: "Sepolia",
 };
 
+type PcmAudio = {
+  pcm: Int16Array;
+  channels: number;
+  sampleRate: number;
+};
+
 export type OutputFormat = "wav" | "aiff" | "m4a";
 
 export const OUTPUT_FORMATS: Array<{
@@ -22,7 +28,6 @@ export const OUTPUT_FORMATS: Array<{
 }> = [
   { value: "wav", label: "WAV", mimeType: "audio/wav" },
   { value: "aiff", label: "AIFF", mimeType: "audio/aiff" },
-  { value: "m4a", label: "M4A", mimeType: "audio/mp4" },
 ];
 
 export type ProofPayload = {
@@ -34,6 +39,7 @@ export type ProofPayload = {
   nonce: string;
   issuedAt: string;
   statement: string;
+  audioFingerprint: string;
   chain?: string;
   verifiedBy?: string;
   song?: {
@@ -67,6 +73,7 @@ export function buildSiweMessage({
   issuedAt,
   nonce,
   statement,
+  audioFingerprint,
   uri,
   chain,
   song,
@@ -94,6 +101,7 @@ ${statement}${chainLine}${songLine}${verifiedByLine}
 URI: ${uri}
 Version: 1
 Chain ID: ${chainId}
+Audio Fingerprint: ${audioFingerprint}
 Nonce: ${nonce}
 Issued At: ${issuedAt}`;
 }
@@ -187,7 +195,7 @@ export async function encodeWatermarkedPcmWithProgress(
 
 export function readPayloadFromAudio(bytes: Uint8Array): ProofPayload {
   try {
-    return readPayloadFromPcm(readPcm16Audio(bytes));
+    return readPayloadFromPcm(readPcm16Audio(bytes).pcm);
   } catch (error) {
     const taggedPayload = readPayloadFromTaggedBytes(bytes);
 
@@ -197,6 +205,16 @@ export function readPayloadFromAudio(bytes: Uint8Array): ProofPayload {
 
     throw error;
   }
+}
+
+export async function createAudioFingerprint(audioBuffer: AudioBuffer) {
+  return hashPcmFingerprint(audioBufferToPcmAudio(audioBuffer));
+}
+
+export async function createWatermarkedAudioFingerprint(bytes: Uint8Array) {
+  const audio = readPcm16Audio(bytes);
+  readPayloadFromPcm(audio.pcm);
+  return hashPcmFingerprint(audio);
 }
 
 export async function writeAudioFile(
@@ -241,10 +259,6 @@ export function inferOutputFormat(file: File | null): OutputFormat {
 
   if (extension === "aif" || extension === "aiff") {
     return "aiff";
-  }
-
-  if (extension === "m4a") {
-    return "m4a";
   }
 
   return "wav";
@@ -292,7 +306,7 @@ function createNonce() {
   );
 }
 
-function readPcm16Audio(bytes: Uint8Array) {
+function readPcm16Audio(bytes: Uint8Array): PcmAudio {
   if (readAscii(bytes, 0, 4) === "RIFF" && readAscii(bytes, 8, 4) === "WAVE") {
     return readWavPcm16(bytes);
   }
@@ -363,6 +377,8 @@ function readWavPcm16(bytes: Uint8Array) {
   let offset = 12;
   let audioFormat = 0;
   let bitsPerSample = 0;
+  let channels = 0;
+  let sampleRate = 0;
   let dataOffset = 0;
   let dataLength = 0;
 
@@ -373,6 +389,8 @@ function readWavPcm16(bytes: Uint8Array) {
 
     if (chunkId === "fmt ") {
       audioFormat = view.getUint16(chunkDataOffset, true);
+      channels = view.getUint16(chunkDataOffset + 2, true);
+      sampleRate = view.getUint32(chunkDataOffset + 4, true);
       bitsPerSample = view.getUint16(chunkDataOffset + 14, true);
     }
 
@@ -389,12 +407,16 @@ function readWavPcm16(bytes: Uint8Array) {
     throw new Error("Verification currently expects 16-bit PCM WAV audio.");
   }
 
-  return new Int16Array(
-    bytes.buffer.slice(
-      bytes.byteOffset + dataOffset,
-      bytes.byteOffset + dataOffset + dataLength,
+  return {
+    pcm: new Int16Array(
+      bytes.buffer.slice(
+        bytes.byteOffset + dataOffset,
+        bytes.byteOffset + dataOffset + dataLength,
+      ),
     ),
-  );
+    channels,
+    sampleRate,
+  };
 }
 
 function writeWav(pcm: Int16Array, channels: number, sampleRate: number) {
@@ -430,6 +452,8 @@ function writeWav(pcm: Int16Array, channels: number, sampleRate: number) {
 function readAiffPcm16(bytes: Uint8Array) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let offset = 12;
+  let channels = 0;
+  let sampleRate = 0;
   let bitsPerSample = 0;
   let dataOffset = 0;
   let dataLength = 0;
@@ -440,7 +464,9 @@ function readAiffPcm16(bytes: Uint8Array) {
     const chunkDataOffset = offset + 8;
 
     if (chunkId === "COMM") {
+      channels = view.getUint16(chunkDataOffset, false);
       bitsPerSample = view.getUint16(chunkDataOffset + 6, false);
+      sampleRate = readExtended80(bytes, chunkDataOffset + 8);
     }
 
     if (chunkId === "SSND") {
@@ -463,7 +489,7 @@ function readAiffPcm16(bytes: Uint8Array) {
     pcm[index] = view.getInt16(dataOffset + index * 2, false);
   }
 
-  return pcm;
+  return { pcm, channels, sampleRate };
 }
 
 function writeAiff(pcm: Int16Array, channels: number, sampleRate: number) {
@@ -582,6 +608,46 @@ function floatToInt16(sample: number) {
   return clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767);
 }
 
+function audioBufferToPcmAudio(audioBuffer: AudioBuffer): PcmAudio {
+  const channels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const frames = audioBuffer.length;
+  const pcm = new Int16Array(frames * channels);
+
+  for (let frame = 0; frame < frames; frame += 1) {
+    for (let channel = 0; channel < channels; channel += 1) {
+      pcm[frame * channels + channel] = floatToInt16(
+        audioBuffer.getChannelData(channel)[frame] ?? 0,
+      );
+    }
+  }
+
+  return { pcm, channels, sampleRate };
+}
+
+async function hashPcmFingerprint(audio: PcmAudio) {
+  const header = new Uint8Array(8);
+  const headerView = new DataView(header.buffer);
+  headerView.setUint16(0, audio.channels, true);
+  headerView.setUint32(2, audio.sampleRate, true);
+  const pcmBytes = new Uint8Array(audio.pcm.length * 2);
+  const pcmView = new DataView(pcmBytes.buffer);
+
+  for (let index = 0; index < audio.pcm.length; index += 1) {
+    pcmView.setInt16(index * 2, audio.pcm[index] & ~1, true);
+  }
+
+  const bytes = new Uint8Array(header.byteLength + pcmBytes.byteLength);
+  bytes.set(header, 0);
+  bytes.set(pcmBytes, header.byteLength);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const hash = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+
+  return `sha256:${hash}`;
+}
+
 function readAscii(bytes: Uint8Array, offset: number, length: number) {
   return new TextDecoder().decode(bytes.slice(offset, offset + length));
 }
@@ -596,6 +662,23 @@ function toArrayBuffer(bytes: Uint8Array) {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   return buffer;
+}
+
+function readExtended80(bytes: Uint8Array, offset: number) {
+  const exponent = ((bytes[offset] & 0x7f) << 8) | bytes[offset + 1];
+
+  if (exponent === 0) {
+    return 0;
+  }
+
+  let mantissa = BigInt(0);
+
+  for (let index = 0; index < 8; index += 1) {
+    mantissa = (mantissa << BigInt(8)) | BigInt(bytes[offset + 2 + index]);
+  }
+
+  const fraction = Number(mantissa) / 2 ** 63;
+  return Math.round(fraction * 2 ** (exponent - 16383));
 }
 
 function writeExtended80(bytes: Uint8Array, offset: number, value: number) {
@@ -636,6 +719,7 @@ function isProofPayload(value: unknown): value is ProofPayload {
     typeof payload.nonce === "string" &&
     typeof payload.issuedAt === "string" &&
     typeof payload.statement === "string" &&
+    typeof payload.audioFingerprint === "string" &&
     (typeof payload.chain === "undefined" || typeof payload.chain === "string") &&
     (typeof payload.verifiedBy === "undefined" ||
       typeof payload.verifiedBy === "string") &&

@@ -5,6 +5,7 @@ import { useAccount, useSignMessage } from "wagmi";
 import {
   OUTPUT_FORMATS,
   buildSiweMessage,
+  createAudioFingerprint,
   createOutputName,
   createSiweFields,
   decodeAudioFile,
@@ -51,14 +52,20 @@ export function CreateWatermarkStudio() {
     }
 
     setIsEncoding(true);
-    setStatus("Preparing SIWE message...");
+    setStatus("Decoding audio locally...");
 
     try {
+      const audioBuffer = await decodeAudioFile(sourceFile);
+      setEmbeddingWaveform(createWaveformPeaks(audioBuffer));
+      setStatus("Fingerprinting audio locally...");
+      const audioFingerprint = await createAudioFingerprint(audioBuffer);
       const song = cleanSongMetadata(songMetadata);
       const siweFields = {
         ...createSiweFields(address, chainId),
+        audioFingerprint,
         ...(song ? { song } : {}),
       };
+      setStatus("Preparing SIWE message...");
       const message = buildSiweMessage(siweFields);
       const signature = await signMessageAsync({ message });
       setEmbeddingAddress(address);
@@ -70,9 +77,6 @@ export function CreateWatermarkStudio() {
       } as const;
       localStorage.setItem("sonosig:last-proof", JSON.stringify(payload));
 
-      setStatus("Decoding audio locally...");
-      const audioBuffer = await decodeAudioFile(sourceFile);
-      setEmbeddingWaveform(createWaveformPeaks(audioBuffer));
       const payloadBytes = encodePayload(payload);
       const requiredSamples = payloadBytes.length * 8;
       const availableSamples = audioBuffer.length * audioBuffer.numberOfChannels;
