@@ -73,7 +73,7 @@ const faqs = [
   {
     question: "Is the proof tied to the actual audio?",
     answer:
-      "Yes. SonoSig includes a SHA-256 audio fingerprint in the signed payload. During verification, the browser recomputes the fingerprint from the watermarked WAV or AIFF and rejects files where the audio no longer matches the signed claim.",
+      "Yes. SonoSig does not only encode that a wallet signed something. It encodes that wallet X signed this specific audio fingerprint, at this time, for this purpose, with this nonce. During verification, the browser recomputes the fingerprint from the watermarked WAV or AIFF and rejects files where the audio no longer matches the signed claim.",
   },
   {
     question: "Does this replace copyright registration?",
