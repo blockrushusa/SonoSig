@@ -9,8 +9,7 @@ import {
   createSiweFields,
   decodeAudioFile,
   encodePayload,
-  encodeWatermarkedPcm,
-  getOutputFormat,
+  encodeWatermarkedPcmWithProgress,
   inferOutputFormat,
   writeAudioFile,
   type OutputFormat,
@@ -32,6 +31,11 @@ export function CreateWatermarkStudio() {
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [isEncoding, setIsEncoding] = useState(false);
+  const [isEmbedding, setIsEmbedding] = useState(false);
+  const [embeddingWaveform, setEmbeddingWaveform] = useState<number[]>([]);
+  const [embeddingAddress, setEmbeddingAddress] = useState("");
+  const [embeddingProgress, setEmbeddingProgress] = useState(0);
+  const [embeddingSignature, setEmbeddingSignature] = useState("");
   const outputUrlRef = useRef<string | null>(null);
 
   const canEncode = Boolean(isConnected && address && chainId && sourceFile);
@@ -49,6 +53,8 @@ export function CreateWatermarkStudio() {
       const siweFields = createSiweFields(address, chainId);
       const message = buildSiweMessage(siweFields);
       const signature = await signMessageAsync({ message });
+      setEmbeddingAddress(address);
+      setEmbeddingSignature(signature);
       const payload = {
         v: 1,
         ...siweFields,
@@ -57,6 +63,7 @@ export function CreateWatermarkStudio() {
 
       setStatus("Decoding audio locally...");
       const audioBuffer = await decodeAudioFile(sourceFile);
+      setEmbeddingWaveform(createWaveformPeaks(audioBuffer));
       const payloadBytes = encodePayload(payload);
       const requiredSamples = payloadBytes.length * 8;
       const availableSamples = audioBuffer.length * audioBuffer.numberOfChannels;
@@ -70,12 +77,23 @@ export function CreateWatermarkStudio() {
       setStatus(
         "Embedding proof payload via browser... Client side only.... No audio is uploaded.",
       );
-      const watermarked = encodeWatermarkedPcm(audioBuffer, payloadBytes);
+      setIsEmbedding(true);
+      setEmbeddingProgress(0);
+      await nextFrame();
+      const watermarked = await encodeWatermarkedPcmWithProgress(
+        audioBuffer,
+        payloadBytes,
+        (progress) => setEmbeddingProgress(progress * 0.35),
+      );
+      setEmbeddingProgress(0.35);
       const blob = await writeAudioFile(
         watermarked,
         outputFormat,
         payloadBytes,
+        (progress) => setEmbeddingProgress(0.35 + progress * 0.65),
       );
+      setEmbeddingProgress(1);
+      await nextFrame();
       const url = URL.createObjectURL(blob);
 
       if (outputUrlRef.current) {
@@ -92,6 +110,7 @@ export function CreateWatermarkStudio() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Encoding failed.");
     } finally {
+      setIsEmbedding(false);
       setIsEncoding(false);
     }
   }
@@ -178,7 +197,18 @@ export function CreateWatermarkStudio() {
           </button>
 
           {status ? (
-            <p className="text-sm leading-6 text-zinc-400">{status}</p>
+            <p className="text-center text-sm leading-6 text-zinc-400">
+              {status}
+            </p>
+          ) : null}
+
+          {isEmbedding ? (
+            <EmbeddingVisualization
+              address={embeddingAddress}
+              peaks={embeddingWaveform}
+              progress={embeddingProgress}
+              signature={embeddingSignature}
+            />
           ) : null}
         </div>
 
@@ -188,13 +218,13 @@ export function CreateWatermarkStudio() {
               Watermarked file
             </h2>
             <audio className="mt-4 w-full" controls src={encodedAudio.url} />
-            <div className="mt-4 flex flex-wrap gap-3">
+            <div className="mt-4 flex justify-end">
               <a
                 className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200"
                 download={encodedAudio.fileName}
                 href={encodedAudio.url}
               >
-                Download {getOutputFormat(encodedAudio.format).label}
+                Download
               </a>
             </div>
           </div>
@@ -254,4 +284,215 @@ export function CreateWatermarkStudio() {
       ) : null}
     </div>
   );
+}
+
+function EmbeddingVisualization({
+  address,
+  peaks,
+  progress,
+  signature,
+}: {
+  address: string;
+  peaks: number[];
+  progress: number;
+  signature: string;
+}) {
+  const waveform = peaks.length
+    ? peaks
+    : [0.34, 0.56, 0.42, 0.76, 0.52, 0.88, 0.46, 0.68];
+  const viewWidth = 240;
+  const viewHeight = 120;
+  const centerY = viewHeight / 2;
+  const waveformPath = buildWaveformArea(waveform, viewWidth, centerY);
+  const upperStrand = buildHelixPath(waveform, viewWidth, centerY, 0);
+  const lowerStrand = buildHelixPath(waveform, viewWidth, centerY, Math.PI);
+  const walletStrandText = repeatHelixText(formatReadableHex(address), 16);
+  const signatureStrandText = repeatHelixText(formatReadableHex(signature), 7);
+
+  return (
+    <div
+      aria-label="Embedding proof payload"
+      className="overflow-hidden rounded-lg bg-[#071014] p-4"
+      role="status"
+    >
+      <div className="relative overflow-hidden rounded-md bg-zinc-950/45 px-3 py-5">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_22%,rgba(103,232,249,0.18),transparent_28%),radial-gradient(circle_at_82%_72%,rgba(34,211,238,0.14),transparent_32%)]" />
+        <div className="absolute inset-x-8 top-1/2 h-px bg-cyan-300/15" />
+        <div className="relative">
+          <svg
+            className="h-64 w-full"
+            preserveAspectRatio="none"
+            role="img"
+            viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+          >
+            <defs>
+              <linearGradient id="dna-waveform-fill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#cffafe" stopOpacity="0.95" />
+                <stop offset="48%" stopColor="#67e8f9" stopOpacity="0.34" />
+                <stop offset="100%" stopColor="#0891b2" stopOpacity="0.22" />
+              </linearGradient>
+              <clipPath id="encoding-progress-clip">
+                <rect
+                  height={viewHeight}
+                  width={Math.max(0.1, viewWidth * progress)}
+                  x="0"
+                  y="0"
+                />
+              </clipPath>
+            </defs>
+
+            <path d={upperStrand} fill="none" id="wallet-address-helix" />
+            <path d={lowerStrand} fill="none" id="siwe-signature-helix" />
+
+            <path
+              d={waveformPath}
+              fill="url(#dna-waveform-fill)"
+              opacity="0.88"
+            />
+            <path
+              d={waveformPath}
+              fill="none"
+              stroke="#a5f3fc"
+              strokeOpacity="0.35"
+              strokeWidth="0.6"
+            />
+
+            <g clipPath="url(#encoding-progress-clip)">
+              <text
+                fill="none"
+                fontFamily="var(--font-geist-mono), monospace"
+                fontSize="6.8"
+                fontWeight="700"
+                letterSpacing="0.35"
+                opacity="0.95"
+                stroke="#020617"
+                strokeWidth="1.2"
+              >
+                <textPath href="#wallet-address-helix" startOffset="-6%">
+                  {walletStrandText}
+                </textPath>
+              </text>
+              <text
+                fill="#f8fafc"
+                fontFamily="var(--font-geist-mono), monospace"
+                fontSize="6.8"
+                fontWeight="700"
+                letterSpacing="0.35"
+              >
+                <textPath href="#wallet-address-helix" startOffset="-6%">
+                  {walletStrandText}
+                </textPath>
+              </text>
+              <text
+                fill="none"
+                fontFamily="var(--font-geist-mono), monospace"
+                fontSize="5.6"
+                fontWeight="650"
+                letterSpacing="0.28"
+                opacity="0.95"
+                stroke="#020617"
+                strokeWidth="1"
+              >
+                <textPath href="#siwe-signature-helix" startOffset="-8%">
+                  {signatureStrandText}
+                </textPath>
+              </text>
+              <text
+                fill="#67e8f9"
+                fontFamily="var(--font-geist-mono), monospace"
+                fontSize="5.6"
+                fontWeight="650"
+                letterSpacing="0.28"
+              >
+                <textPath href="#siwe-signature-helix" startOffset="-8%">
+                  {signatureStrandText}
+                </textPath>
+              </text>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function repeatHelixText(value: string, count: number) {
+  const text = value || "pending";
+  return Array.from({ length: count }, () => text).join(" / ");
+}
+
+function formatReadableHex(value: string) {
+  return value
+    .replace(/^0x/i, "0x ")
+    .replace(/(.{4})/g, "$1 ")
+    .trim();
+}
+
+function buildWaveformArea(peaks: number[], width: number, centerY: number) {
+  const top = peaks.map((peak, index) => {
+    const x = (index / (peaks.length - 1)) * width;
+    const y = centerY - Math.max(3, peak * 24);
+    return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+  });
+  const bottom = peaks
+    .map((peak, index) => {
+      const x = (index / (peaks.length - 1)) * width;
+      const y = centerY + Math.max(3, peak * 24);
+      return `L ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .reverse();
+
+  return `${top.join(" ")} ${bottom.join(" ")} Z`;
+}
+
+function buildHelixPath(
+  peaks: number[],
+  width: number,
+  centerY: number,
+  phaseOffset: number,
+) {
+  const pointCount = 96;
+  const points = Array.from({ length: pointCount }, (_, index) => {
+    const progress = index / (pointCount - 1);
+    const peak = peaks[Math.min(peaks.length - 1, Math.floor(progress * peaks.length))];
+    const amplitude = 26 + peak * 10;
+    const x = progress * width;
+    const y = centerY + Math.sin(progress * Math.PI * 8 + phaseOffset) * amplitude;
+    return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+  });
+
+  return points.join(" ");
+}
+
+function createWaveformPeaks(audioBuffer: AudioBuffer) {
+  const sampleCount = 320;
+  const peaks: number[] = [];
+  const channels = Array.from(
+    { length: audioBuffer.numberOfChannels },
+    (_, channel) => audioBuffer.getChannelData(channel),
+  );
+  const samplesPerPeak = Math.max(1, Math.floor(audioBuffer.length / sampleCount));
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const start = index * samplesPerPeak;
+    const end = Math.min(start + samplesPerPeak, audioBuffer.length);
+    let peak = 0;
+
+    for (let sampleIndex = start; sampleIndex < end; sampleIndex += 1) {
+      for (const channelData of channels) {
+        peak = Math.max(peak, Math.abs(channelData[sampleIndex] ?? 0));
+      }
+    }
+
+    peaks.push(Math.min(1, Math.max(0.05, peak)));
+  }
+
+  const maxPeak = Math.max(...peaks);
+  return peaks.map((peak) => peak / maxPeak);
+}
+
+function nextFrame() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 }

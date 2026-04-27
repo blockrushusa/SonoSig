@@ -128,6 +128,44 @@ export function encodeWatermarkedPcm(
   return { pcm, channels, sampleRate };
 }
 
+export async function encodeWatermarkedPcmWithProgress(
+  audioBuffer: AudioBuffer,
+  payloadBytes: Uint8Array,
+  onProgress: (progress: number) => void,
+) {
+  const channels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const frames = audioBuffer.length;
+  const pcm = new Int16Array(frames * channels);
+  let bitIndex = 0;
+  const totalBits = payloadBytes.length * 8;
+  const chunkSize = Math.max(512, Math.floor(frames / 80));
+
+  for (let frame = 0; frame < frames; frame += 1) {
+    for (let channel = 0; channel < channels; channel += 1) {
+      const sample = audioBuffer.getChannelData(channel)[frame] ?? 0;
+      let intSample = floatToInt16(sample);
+
+      if (bitIndex < totalBits) {
+        const bit = (payloadBytes[Math.floor(bitIndex / 8)] >> (bitIndex % 8)) & 1;
+        intSample = (intSample & ~1) | bit;
+        bitIndex += 1;
+      }
+
+      pcm[frame * channels + channel] = intSample;
+    }
+
+    if (frame % chunkSize === 0) {
+      onProgress(frame / frames);
+      await nextFrame();
+    }
+  }
+
+  onProgress(1);
+
+  return { pcm, channels, sampleRate };
+}
+
 export function readPayloadFromAudio(bytes: Uint8Array): ProofPayload {
   try {
     return readPayloadFromPcm(readPcm16Audio(bytes));
@@ -146,22 +184,30 @@ export async function writeAudioFile(
   audio: { pcm: Int16Array; channels: number; sampleRate: number },
   format: OutputFormat,
   payloadBytes: Uint8Array,
+  onProgress?: (progress: number) => void,
 ) {
   if (format === "aiff") {
     const outputBytes = writeAiff(audio.pcm, audio.channels, audio.sampleRate);
+    onProgress?.(1);
     return new Blob([toArrayBuffer(outputBytes)], {
       type: getOutputFormat(format).mimeType,
     });
   }
 
   if (format === "m4a") {
-    const m4aBlob = await writeM4a(audio.pcm, audio.channels, audio.sampleRate);
+    const m4aBlob = await writeM4a(
+      audio.pcm,
+      audio.channels,
+      audio.sampleRate,
+      onProgress,
+    );
     return new Blob([m4aBlob, toArrayBuffer(payloadBytes)], {
       type: getOutputFormat(format).mimeType,
     });
   }
 
   const outputBytes = writeWav(audio.pcm, audio.channels, audio.sampleRate);
+  onProgress?.(1);
   return new Blob([toArrayBuffer(outputBytes)], {
     type: getOutputFormat(format).mimeType,
   });
@@ -432,7 +478,12 @@ function writeAiff(pcm: Int16Array, channels: number, sampleRate: number) {
   return output;
 }
 
-async function writeM4a(pcm: Int16Array, channels: number, sampleRate: number) {
+async function writeM4a(
+  pcm: Int16Array,
+  channels: number,
+  sampleRate: number,
+  onProgress?: (progress: number) => void,
+) {
   const mimeType = getSupportedM4aMimeType();
 
   if (!mimeType) {
@@ -480,6 +531,12 @@ async function writeM4a(pcm: Int16Array, channels: number, sampleRate: number) {
 
   recorder.start();
   source.start();
+  const durationMs = (audioBuffer.length / sampleRate) * 1000;
+  const startedAt = performance.now();
+  const progressTimer = window.setInterval(() => {
+    const elapsed = performance.now() - startedAt;
+    onProgress?.(Math.min(0.98, elapsed / durationMs));
+  }, 100);
 
   await new Promise<void>((resolve) => {
     source.addEventListener("ended", () => {
@@ -487,11 +544,15 @@ async function writeM4a(pcm: Int16Array, channels: number, sampleRate: number) {
     });
   });
 
+  window.clearInterval(progressTimer);
+  onProgress?.(0.99);
+
   if (recorder.state !== "inactive") {
     recorder.stop();
   }
 
   const blob = await stopped;
+  onProgress?.(1);
   await audioContext.close();
 
   return blob;
@@ -572,6 +633,12 @@ function getSupportedM4aMimeType() {
   const mimeTypes = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4"];
 
   return mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+}
+
+function nextFrame() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 }
 
 declare global {
