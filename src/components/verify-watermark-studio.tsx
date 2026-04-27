@@ -4,7 +4,7 @@ import { useState } from "react";
 import { verifyMessage } from "viem";
 import {
   buildSiweMessage,
-  createWatermarkedAudioFingerprint,
+  createWatermarkedAudioProofHashes,
   getChainName,
   readPayloadFromAudio,
   type ProofPayload,
@@ -36,9 +36,12 @@ export function VerifyWatermarkStudio() {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const payload = readPayloadFromAudio(bytes);
-      const audioFingerprint = await createWatermarkedAudioFingerprint(bytes);
+      const audioProofHashes = await createWatermarkedAudioProofHashes(bytes);
 
-      if (audioFingerprint !== payload.audioFingerprint) {
+      if (
+        audioProofHashes.audio_hash !== payload.audio_hash ||
+        audioProofHashes.audio_fingerprint !== payload.audio_fingerprint
+      ) {
         setVerification({
           status: "invalid",
           reason: "Watermark found, but the audio fingerprint does not match.",
@@ -49,7 +52,7 @@ export function VerifyWatermarkStudio() {
       }
 
       const isValid = await verifyMessage({
-        address: payload.address,
+        address: payload.wallet,
         message: buildSiweMessage(payload),
         signature: payload.signature,
       });
@@ -134,22 +137,32 @@ export function VerifyWatermarkStudio() {
             <dl className="mt-4 grid gap-3 text-sm text-zinc-300">
               <div>
                 <dt className="text-zinc-500">Wallet</dt>
-                <dd className="break-all">{verification.payload.address}</dd>
+                <dd className="break-all">{verification.payload.wallet}</dd>
               </div>
               <div>
                 <dt className="text-zinc-500">Issued</dt>
-                <dd>{verification.payload.issuedAt}</dd>
+                <dd>{verification.payload.issued_at}</dd>
               </div>
               <div>
                 <dt className="text-zinc-500">Chain</dt>
                 <dd>
                   {verification.payload.chain ??
-                    getChainName(verification.payload.chainId)}
+                    getChainName(verification.payload.chain_id)}
                 </dd>
               </div>
               <div>
                 <dt className="text-zinc-500">Chain ID</dt>
-                <dd>{verification.payload.chainId}</dd>
+                <dd>{verification.payload.chain_id}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">ENS</dt>
+                <dd>{verification.payload.ens || "Not provided"}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Manifest</dt>
+                <dd className="break-all">
+                  {verification.payload.manifest || "Not provided"}
+                </dd>
               </div>
               <div>
                 <dt className="text-zinc-500">Verified by</dt>
@@ -158,7 +171,13 @@ export function VerifyWatermarkStudio() {
               <div>
                 <dt className="text-zinc-500">Audio fingerprint</dt>
                 <dd className="break-all font-mono">
-                  {verification.payload.audioFingerprint}
+                  {verification.payload.audio_fingerprint}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Audio hash</dt>
+                <dd className="break-all font-mono">
+                  {verification.payload.audio_hash}
                 </dd>
               </div>
             </dl>

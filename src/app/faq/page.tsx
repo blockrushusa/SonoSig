@@ -76,6 +76,16 @@ const faqs = [
       "Yes. SonoSig does not only encode that a wallet signed something. It encodes that wallet X signed this specific audio fingerprint, at this time, for this purpose, with this nonce. During verification, the browser recomputes the fingerprint from the watermarked WAV or AIFF and rejects files where the audio no longer matches the signed claim.",
   },
   {
+    question: "What fields are embedded in the watermark?",
+    answer:
+      "The payload includes protocol, ENS name, wallet, audio_fingerprint, audio_hash, manifest, issued_at, nonce, chain_id, signature_type, and signature. SonoSig also keeps local compatibility fields for verification display.",
+  },
+  {
+    question: "Which song metadata can SonoSig import?",
+    answer:
+      "When available, SonoSig reads common ID3, MP4/iTunes, and WAV INFO tags for title, artist, album, album artist, composer, genre, release date, year, track, disc, ISRC, BPM, key, publisher, copyright, and comments. These fields stay editable before signing.",
+  },
+  {
     question: "Does this replace copyright registration?",
     answer:
       "No. SonoSig creates a technical proof of a signed claim. It can help with provenance and evidence, but it does not replace legal registration, contracts, split sheets, or professional legal advice.",

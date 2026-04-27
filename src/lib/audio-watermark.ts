@@ -2,6 +2,7 @@ import type { Hex } from "viem";
 
 const MAGIC = "SONOSIG1";
 const HEADER_BYTES = MAGIC.length + 4;
+const PROTOCOL = "audio-proof-v1";
 
 export const STATEMENT =
   "Create a Sonosig wallet-linked proof payload for this local audio file.";
@@ -32,6 +33,15 @@ export const OUTPUT_FORMATS: Array<{
 
 export type ProofPayload = {
   v: 1;
+  protocol: typeof PROTOCOL;
+  ens: string;
+  wallet: `0x${string}`;
+  audio_fingerprint: string;
+  audio_hash: string;
+  manifest: string;
+  issued_at: string;
+  chain_id: number;
+  signature_type: "SIWE";
   address: `0x${string}`;
   chainId: number;
   domain: string;
@@ -43,24 +53,43 @@ export type ProofPayload = {
   chain?: string;
   verifiedBy?: string;
   song?: {
-    title?: string;
-    artist?: string;
     album?: string;
-    year?: string;
+    albumArtist?: string;
+    artist?: string;
+    bpm?: string;
+    comment?: string;
+    composer?: string;
+    copyright?: string;
+    discNumber?: string;
+    genre?: string;
+    isrc?: string;
+    key?: string;
     notes?: string;
+    publisher?: string;
+    releaseDate?: string;
+    title?: string;
+    trackNumber?: string;
+    year?: string;
   };
   signature: Hex;
 };
 
 export function createSiweFields(address: `0x${string}`, chainId: number) {
+  const issuedAt = new Date().toISOString();
+
   return {
+    protocol: PROTOCOL as typeof PROTOCOL,
+    wallet: address,
     address,
+    chain_id: chainId,
     chainId,
     domain: window.location.host,
     uri: window.location.origin,
     nonce: createNonce(),
-    issuedAt: new Date().toISOString(),
+    issued_at: issuedAt,
+    issuedAt,
     statement: STATEMENT,
+    signature_type: "SIWE" as const,
     chain: getChainName(chainId),
     verifiedBy: VERIFIED_BY,
   };
@@ -68,24 +97,49 @@ export function createSiweFields(address: `0x${string}`, chainId: number) {
 
 export function buildSiweMessage({
   address,
+  wallet,
   chainId,
+  chain_id,
   domain,
+  ens,
+  manifest,
   issuedAt,
+  issued_at,
   nonce,
   statement,
+  audio_hash,
+  audio_fingerprint,
   audioFingerprint,
   uri,
   chain,
+  signature_type,
   song,
   verifiedBy,
 }: Omit<ProofPayload, "v" | "signature">) {
+  const signingAddress = wallet ?? address;
+  const signingChainId = chain_id ?? chainId;
+  const signingIssuedAt = issued_at ?? issuedAt;
+  const signingAudioFingerprint = audio_fingerprint ?? audioFingerprint;
   const chainLine = chain ? `\nChain: ${chain}` : "";
+  const ensLine = ens ? `\nENS: ${ens}` : "";
+  const manifestLine = manifest ? `\nManifest: ${manifest}` : "";
   const songLine = song
     ? `\nSong: ${[
         song.title,
         song.artist,
         song.album,
+        song.albumArtist,
+        song.composer,
+        song.genre,
+        song.releaseDate,
         song.year,
+        song.trackNumber,
+        song.discNumber,
+        song.isrc,
+        song.bpm,
+        song.key,
+        song.publisher,
+        song.copyright,
         song.notes,
       ]
         .filter(Boolean)
@@ -94,16 +148,21 @@ export function buildSiweMessage({
   const verifiedByLine = verifiedBy ? `\nVerified By: ${verifiedBy}` : "";
 
   return `${domain} wants you to sign in with your Ethereum account:
-${address}
+${signingAddress}
 
-${statement}${chainLine}${songLine}${verifiedByLine}
+${statement}${chainLine}${ensLine}${songLine}${manifestLine}${verifiedByLine}
 
 URI: ${uri}
 Version: 1
-Chain ID: ${chainId}
-Audio Fingerprint: ${audioFingerprint}
+Chain ID: ${signingChainId}
+Protocol: ${PROTOCOL}
+Wallet: ${signingAddress}
+Audio Fingerprint: ${signingAudioFingerprint}
+Audio Hash: ${audio_hash}
+Purpose: ${statement}
+Signature Type: ${signature_type}
 Nonce: ${nonce}
-Issued At: ${issuedAt}`;
+Issued At: ${signingIssuedAt}`;
 }
 
 export async function decodeAudioFile(file: File) {
@@ -211,10 +270,26 @@ export async function createAudioFingerprint(audioBuffer: AudioBuffer) {
   return hashPcmFingerprint(audioBufferToPcmAudio(audioBuffer));
 }
 
+export async function createAudioProofHashes(audioBuffer: AudioBuffer) {
+  const audio_hash = await createAudioFingerprint(audioBuffer);
+  return {
+    audio_fingerprint: createFingerprintId(audio_hash),
+    audio_hash,
+  };
+}
+
 export async function createWatermarkedAudioFingerprint(bytes: Uint8Array) {
   const audio = readPcm16Audio(bytes);
   readPayloadFromPcm(audio.pcm);
   return hashPcmFingerprint(audio);
+}
+
+export async function createWatermarkedAudioProofHashes(bytes: Uint8Array) {
+  const audio_hash = await createWatermarkedAudioFingerprint(bytes);
+  return {
+    audio_fingerprint: createFingerprintId(audio_hash),
+    audio_hash,
+  };
 }
 
 export async function writeAudioFile(
@@ -299,7 +374,7 @@ function readPayloadFromPcm(pcm: Int16Array) {
 }
 
 function createNonce() {
-  const bytes = new Uint8Array(12);
+  const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
     "",
@@ -648,6 +723,10 @@ async function hashPcmFingerprint(audio: PcmAudio) {
   return `sha256:${hash}`;
 }
 
+function createFingerprintId(audioHash: string) {
+  return `fp_${audioHash.replace(/^sha256:/, "").slice(0, 12)}`;
+}
+
 function readAscii(bytes: Uint8Array, offset: number, length: number) {
   return new TextDecoder().decode(bytes.slice(offset, offset + length));
 }
@@ -711,6 +790,18 @@ function isProofPayload(value: unknown): value is ProofPayload {
 
   return (
     payload.v === 1 &&
+    payload.protocol === PROTOCOL &&
+    typeof payload.ens === "string" &&
+    typeof payload.wallet === "string" &&
+    payload.wallet.startsWith("0x") &&
+    typeof payload.audio_fingerprint === "string" &&
+    payload.audio_fingerprint.startsWith("fp_") &&
+    typeof payload.audio_hash === "string" &&
+    payload.audio_hash.startsWith("sha256:") &&
+    typeof payload.manifest === "string" &&
+    typeof payload.issued_at === "string" &&
+    typeof payload.chain_id === "number" &&
+    payload.signature_type === "SIWE" &&
     typeof payload.address === "string" &&
     payload.address.startsWith("0x") &&
     typeof payload.chainId === "number" &&

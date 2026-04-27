@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useAccount, useSignMessage } from "wagmi";
+import { useEffect, useRef, useState } from "react";
+import { useAccount, usePublicClient, useSignMessage } from "wagmi";
+import { mainnet } from "wagmi/chains";
+import { readAudioMetadata } from "@/lib/audio-metadata";
 import {
   OUTPUT_FORMATS,
   buildSiweMessage,
-  createAudioFingerprint,
+  createAudioProofHashes,
   createOutputName,
   createSiweFields,
   decodeAudioFile,
@@ -24,9 +26,14 @@ type EncodedAudio = {
 };
 
 type SongMetadata = NonNullable<ProofPayload["song"]>;
+type ProofMetadata = {
+  ens: string;
+  manifest: string;
+};
 
 export function CreateWatermarkStudio() {
   const { address, chainId, isConnected } = useAccount();
+  const mainnetPublicClient = usePublicClient({ chainId: mainnet.id });
   const { signMessageAsync, isPending } = useSignMessage();
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("wav");
@@ -40,10 +47,97 @@ export function CreateWatermarkStudio() {
   const [embeddingAddress, setEmbeddingAddress] = useState("");
   const [embeddingProgress, setEmbeddingProgress] = useState(0);
   const [embeddingSignature, setEmbeddingSignature] = useState("");
+  const [proofMetadata, setProofMetadata] = useState<ProofMetadata>({
+    ens: "",
+    manifest: "",
+  });
+  const [ensOptions, setEnsOptions] = useState<string[]>([]);
+  const [isEnsLoading, setIsEnsLoading] = useState(false);
   const [songMetadata, setSongMetadata] = useState<SongMetadata>({});
+  const didEditEnsRef = useRef(false);
   const outputUrlRef = useRef<string | null>(null);
 
   const canEncode = Boolean(isConnected && address && chainId && sourceFile);
+
+  async function handleSourceFileChange(file: File | null) {
+    setSourceFile(file);
+    setOutputFormat(inferOutputFormat(file));
+    setEncodedAudio(null);
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const metadata = await readAudioMetadata(file);
+      setSongMetadata((current) => mergeMissingMetadata(current, metadata));
+    } catch {
+      // Metadata extraction is best-effort. Encoding can continue without tags.
+    }
+  }
+
+  useEffect(() => {
+    didEditEnsRef.current = false;
+
+    let isActive = true;
+
+    if (!address || !mainnetPublicClient) {
+      queueMicrotask(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setEnsOptions([]);
+        setIsEnsLoading(false);
+        setProofMetadata((metadata) => ({ ...metadata, ens: "" }));
+      });
+
+      return () => {
+        isActive = false;
+      };
+    }
+
+    queueMicrotask(() => {
+      if (!isActive) {
+        return;
+      }
+
+      setEnsOptions([]);
+      setIsEnsLoading(true);
+    });
+
+    mainnetPublicClient
+      .getEnsName({ address })
+      .then((ensName) => {
+        if (!isActive) {
+          return;
+        }
+
+        const options = ensName ? [ensName] : [];
+        setEnsOptions(options);
+        setProofMetadata((metadata) => {
+          if (didEditEnsRef.current) {
+            return metadata;
+          }
+
+          return { ...metadata, ens: ensName ?? "" };
+        });
+      })
+      .catch(() => {
+        if (isActive) {
+          setEnsOptions([]);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsEnsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [address, mainnetPublicClient]);
 
   async function handleEncode() {
     if (!sourceFile || !address || !chainId) {
@@ -58,11 +152,14 @@ export function CreateWatermarkStudio() {
       const audioBuffer = await decodeAudioFile(sourceFile);
       setEmbeddingWaveform(createWaveformPeaks(audioBuffer));
       setStatus("Fingerprinting audio locally...");
-      const audioFingerprint = await createAudioFingerprint(audioBuffer);
+      const audioProofHashes = await createAudioProofHashes(audioBuffer);
       const song = cleanSongMetadata(songMetadata);
       const siweFields = {
         ...createSiweFields(address, chainId),
-        audioFingerprint,
+        ens: proofMetadata.ens.trim(),
+        manifest: proofMetadata.manifest.trim(),
+        audioFingerprint: audioProofHashes.audio_hash,
+        ...audioProofHashes,
         ...(song ? { song } : {}),
       };
       setStatus("Preparing SIWE message...");
@@ -182,6 +279,58 @@ export function CreateWatermarkStudio() {
               ))}
             </div>
             <div className="grid gap-3 rounded-lg border border-white/10 bg-zinc-950/40 p-4 md:grid-cols-2">
+              {ensOptions.length ? (
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium text-zinc-300">ENS</span>
+                  <select
+                    className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
+                    onChange={(event) => {
+                      didEditEnsRef.current = true;
+                      setProofMetadata((metadata) => ({
+                        ...metadata,
+                        ens:
+                          event.target.value === "__custom__"
+                            ? ""
+                            : event.target.value,
+                      }));
+                    }}
+                    value={
+                      ensOptions.includes(proofMetadata.ens)
+                        ? proofMetadata.ens
+                        : "__custom__"
+                    }
+                  >
+                    {ensOptions.map((ensName) => (
+                      <option key={ensName} value={ensName}>
+                        {ensName}
+                      </option>
+                    ))}
+                    <option value="__custom__">Custom ENS</option>
+                  </select>
+                </label>
+              ) : null}
+              <MetadataInput
+                label={ensOptions.length ? "Alternate ENS" : "ENS"}
+                onChange={(value) => {
+                  didEditEnsRef.current = true;
+                  setProofMetadata((metadata) => ({ ...metadata, ens: value }));
+                }}
+                placeholder={isEnsLoading ? "Resolving ENS..." : "artist.eth"}
+                value={
+                  ensOptions.includes(proofMetadata.ens) ? "" : proofMetadata.ens
+                }
+              />
+              <MetadataInput
+                label="Manifest"
+                onChange={(value) =>
+                  setProofMetadata((metadata) => ({
+                    ...metadata,
+                    manifest: value,
+                  }))
+                }
+                placeholder="ipfs://bafy..."
+                value={proofMetadata.manifest}
+              />
               <MetadataInput
                 label="Song"
                 onChange={(value) =>
@@ -197,6 +346,16 @@ export function CreateWatermarkStudio() {
                 value={songMetadata.artist ?? ""}
               />
               <MetadataInput
+                label="Album Artist"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({
+                    ...metadata,
+                    albumArtist: value,
+                  }))
+                }
+                value={songMetadata.albumArtist ?? ""}
+              />
+              <MetadataInput
                 label="Album"
                 onChange={(value) =>
                   setSongMetadata((metadata) => ({ ...metadata, album: value }))
@@ -204,11 +363,96 @@ export function CreateWatermarkStudio() {
                 value={songMetadata.album ?? ""}
               />
               <MetadataInput
+                label="Composer"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, composer: value }))
+                }
+                value={songMetadata.composer ?? ""}
+              />
+              <MetadataInput
+                label="Genre"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, genre: value }))
+                }
+                value={songMetadata.genre ?? ""}
+              />
+              <MetadataInput
+                label="Release Date"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({
+                    ...metadata,
+                    releaseDate: value,
+                  }))
+                }
+                value={songMetadata.releaseDate ?? ""}
+              />
+              <MetadataInput
                 label="Year"
                 onChange={(value) =>
                   setSongMetadata((metadata) => ({ ...metadata, year: value }))
                 }
                 value={songMetadata.year ?? ""}
+              />
+              <MetadataInput
+                label="Track"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({
+                    ...metadata,
+                    trackNumber: value,
+                  }))
+                }
+                value={songMetadata.trackNumber ?? ""}
+              />
+              <MetadataInput
+                label="Disc"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({
+                    ...metadata,
+                    discNumber: value,
+                  }))
+                }
+                value={songMetadata.discNumber ?? ""}
+              />
+              <MetadataInput
+                label="ISRC"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, isrc: value }))
+                }
+                value={songMetadata.isrc ?? ""}
+              />
+              <MetadataInput
+                label="BPM"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, bpm: value }))
+                }
+                value={songMetadata.bpm ?? ""}
+              />
+              <MetadataInput
+                label="Key"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({ ...metadata, key: value }))
+                }
+                value={songMetadata.key ?? ""}
+              />
+              <MetadataInput
+                label="Publisher"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({
+                    ...metadata,
+                    publisher: value,
+                  }))
+                }
+                value={songMetadata.publisher ?? ""}
+              />
+              <MetadataInput
+                label="Copyright"
+                onChange={(value) =>
+                  setSongMetadata((metadata) => ({
+                    ...metadata,
+                    copyright: value,
+                  }))
+                }
+                value={songMetadata.copyright ?? ""}
               />
               <label className="grid gap-2 md:col-span-2">
                 <span className="text-sm font-medium text-zinc-300">Notes</span>
@@ -235,9 +479,7 @@ export function CreateWatermarkStudio() {
               className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950"
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
-                setSourceFile(file);
-                setOutputFormat(inferOutputFormat(file));
-                setEncodedAudio(null);
+                void handleSourceFileChange(file);
               }}
               type="file"
             />
@@ -477,13 +719,24 @@ function repeatHelixText(value: string, count: number) {
   return Array.from({ length: count }, () => text).join(" / ");
 }
 
+function mergeMissingMetadata(current: SongMetadata, extracted: SongMetadata) {
+  return {
+    ...extracted,
+    ...Object.fromEntries(
+      Object.entries(current).filter(([, value]) => Boolean(value?.trim())),
+    ),
+  } as SongMetadata;
+}
+
 function MetadataInput({
   label,
   onChange,
+  placeholder,
   value,
 }: {
   label: string;
   onChange: (value: string) => void;
+  placeholder?: string;
   value: string;
 }) {
   return (
@@ -492,6 +745,7 @@ function MetadataInput({
       <input
         className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
         onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
         value={value}
       />
     </label>
