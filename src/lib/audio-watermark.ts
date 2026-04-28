@@ -20,7 +20,7 @@ type PcmAudio = {
   sampleRate: number;
 };
 
-export type OutputFormat = "wav" | "aiff" | "m4a";
+export type OutputFormat = "wav" | "aiff" | "m4a" | "ogg";
 
 export const OUTPUT_FORMATS: Array<{
   value: OutputFormat;
@@ -29,6 +29,8 @@ export const OUTPUT_FORMATS: Array<{
 }> = [
   { value: "wav", label: "WAV", mimeType: "audio/wav" },
   { value: "aiff", label: "AIFF", mimeType: "audio/aiff" },
+  { value: "m4a", label: "M4A", mimeType: "audio/mp4" },
+  { value: "ogg", label: "OGG", mimeType: "audio/ogg" },
 ];
 
 export type ProofPayload = {
@@ -318,6 +320,18 @@ export async function writeAudioFile(
     });
   }
 
+  if (format === "ogg") {
+    const oggBlob = await writeOgg(
+      audio.pcm,
+      audio.channels,
+      audio.sampleRate,
+      onProgress,
+    );
+    return new Blob([oggBlob, toArrayBuffer(payloadBytes)], {
+      type: getOutputFormat(format).mimeType,
+    });
+  }
+
   const outputBytes = writeWav(audio.pcm, audio.channels, audio.sampleRate);
   onProgress?.(1);
   return new Blob([toArrayBuffer(outputBytes)], {
@@ -334,6 +348,14 @@ export function inferOutputFormat(file: File | null): OutputFormat {
 
   if (extension === "aif" || extension === "aiff") {
     return "aiff";
+  }
+
+  if (extension === "m4a") {
+    return "m4a";
+  }
+
+  if (extension === "oga" || extension === "ogg" || extension === "opus") {
+    return "ogg";
   }
 
   return "wav";
@@ -610,6 +632,46 @@ async function writeM4a(
     throw new Error("This browser does not support local M4A export.");
   }
 
+  return writeMediaRecorderAudio(
+    pcm,
+    channels,
+    sampleRate,
+    mimeType,
+    "M4A",
+    onProgress,
+  );
+}
+
+async function writeOgg(
+  pcm: Int16Array,
+  channels: number,
+  sampleRate: number,
+  onProgress?: (progress: number) => void,
+) {
+  const mimeType = getSupportedOggMimeType();
+
+  if (!mimeType) {
+    throw new Error("This browser does not support local OGG export.");
+  }
+
+  return writeMediaRecorderAudio(
+    pcm,
+    channels,
+    sampleRate,
+    mimeType,
+    "OGG",
+    onProgress,
+  );
+}
+
+async function writeMediaRecorderAudio(
+  pcm: Int16Array,
+  channels: number,
+  sampleRate: number,
+  mimeType: string,
+  formatLabel: string,
+  onProgress?: (progress: number) => void,
+) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   const audioContext = new AudioContextClass({ sampleRate });
   const audioBuffer = audioContext.createBuffer(
@@ -645,7 +707,7 @@ async function writeM4a(
       resolve(new Blob(chunks, { type: mimeType }));
     });
     recorder.addEventListener("error", () => {
-      reject(new Error("M4A export failed."));
+      reject(new Error(`${formatLabel} export failed.`));
     });
   });
 
@@ -827,6 +889,16 @@ export function getChainName(chainId: number) {
 
 function getSupportedM4aMimeType() {
   const mimeTypes = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4"];
+
+  return mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+}
+
+function getSupportedOggMimeType() {
+  const mimeTypes = [
+    "audio/ogg;codecs=opus",
+    "audio/ogg;codecs=vorbis",
+    "audio/ogg",
+  ];
 
   return mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
 }

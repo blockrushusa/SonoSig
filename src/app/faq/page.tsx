@@ -86,6 +86,11 @@ const faqs = [
       "When available, SonoSig reads common ID3, MP4/iTunes, and WAV INFO tags for title, artist, album, album artist, composer, genre, release date, year, track, disc, ISRC, BPM, key, publisher, copyright, and comments. These fields stay editable before signing.",
   },
   {
+    question: "Why is WAV or AIFF preferred for verification?",
+    answer:
+      "WAV and AIFF keep the embedded payload in PCM samples, so SonoSig can recompute the signed audio hash directly. M4A and OGG are available for convenient local export and sharing, but lossy encoding can change sample data, so exact audio-hash verification is strongest with WAV and AIFF.",
+  },
+  {
     question: "Does this replace copyright registration?",
     answer:
       "No. SonoSig creates a technical proof of a signed claim. It can help with provenance and evidence, but it does not replace legal registration, contracts, split sheets, or professional legal advice.",

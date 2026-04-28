@@ -4,6 +4,7 @@ const encodingSteps = [
   "The selected audio file is decoded by the browser with the Web Audio API.",
   "SonoSig fingerprints the decoded audio and signs that fingerprint with the SIWE message.",
   "For WAV and AIFF exports, the payload is embedded into low-order PCM sample bits.",
+  "For M4A and OGG exports, the browser encodes audio locally and attaches the signed payload for sharing, while exact audio-hash verification is strongest with WAV and AIFF.",
   "The finished file is generated as a browser download. No audio is uploaded.",
 ];
 

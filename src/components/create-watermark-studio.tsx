@@ -45,6 +45,9 @@ export function CreateWatermarkStudio() {
   const [isEmbedding, setIsEmbedding] = useState(false);
   const [embeddingWaveform, setEmbeddingWaveform] = useState<number[]>([]);
   const [embeddingAddress, setEmbeddingAddress] = useState("");
+  const [playbackDuration, setPlaybackDuration] = useState(0);
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [isPlaybackPlaying, setIsPlaybackPlaying] = useState(false);
   const [embeddingProgress, setEmbeddingProgress] = useState(0);
   const [embeddingSignature, setEmbeddingSignature] = useState("");
   const [proofMetadata, setProofMetadata] = useState<ProofMetadata>({
@@ -55,6 +58,7 @@ export function CreateWatermarkStudio() {
   const [isEnsLoading, setIsEnsLoading] = useState(false);
   const [songMetadata, setSongMetadata] = useState<SongMetadata>({});
   const didEditEnsRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const outputUrlRef = useRef<string | null>(null);
 
   const canEncode = Boolean(isConnected && address && chainId && sourceFile);
@@ -63,6 +67,9 @@ export function CreateWatermarkStudio() {
     setSourceFile(file);
     setOutputFormat(inferOutputFormat(file));
     setEncodedAudio(null);
+    setIsPlaybackPlaying(false);
+    setPlaybackDuration(0);
+    setPlaybackTime(0);
 
     if (!file) {
       return;
@@ -216,12 +223,26 @@ export function CreateWatermarkStudio() {
         fileName: createOutputName(sourceFile.name, outputFormat),
         format: outputFormat,
       });
-      setStatus("Watermarked audio is ready.");
+      setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Encoding failed.");
     } finally {
       setIsEmbedding(false);
       setIsEncoding(false);
+    }
+  }
+
+  async function handleTogglePlayback() {
+    const audio = audioRef.current;
+
+    if (!audio || !encodedAudio) {
+      return;
+    }
+
+    if (audio.paused) {
+      await audio.play();
+    } else {
+      audio.pause();
     }
   }
 
@@ -500,23 +521,47 @@ export function CreateWatermarkStudio() {
             </p>
           ) : null}
 
-          {isEmbedding ? (
+          {isEmbedding || encodedAudio ? (
             <EmbeddingVisualization
               address={embeddingAddress}
+              audioUrl={encodedAudio?.url}
+              canPlay={Boolean(encodedAudio)}
+              duration={playbackDuration}
+              onDurationChange={(duration) => setPlaybackDuration(duration)}
+              onEnded={() => {
+                setIsPlaybackPlaying(false);
+                setPlaybackTime(0);
+              }}
+              onPlayStateChange={(isPlaying) => setIsPlaybackPlaying(isPlaying)}
+              onTimeChange={(time) => setPlaybackTime(time)}
               peaks={embeddingWaveform}
-              progress={embeddingProgress}
+              progress={
+                encodedAudio && playbackDuration > 0
+                  ? playbackTime / playbackDuration
+                  : embeddingProgress
+              }
+              ref={audioRef}
               signature={embeddingSignature}
+              time={playbackTime}
             />
           ) : null}
         </div>
 
         {encodedAudio ? (
           <div className="mt-8 rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-5">
-            <h2 className="text-lg font-semibold text-white">
-              Watermarked file
-            </h2>
-            <audio className="mt-4 w-full" controls src={encodedAudio.url} />
-            <div className="mt-4 flex justify-end">
+            <div className="flex items-center justify-between gap-4">
+              <button
+                aria-label={
+                  isPlaybackPlaying ? "Pause watermarked audio" : "Play watermarked audio"
+                }
+                className="grid h-12 w-12 place-items-center rounded-full border border-cyan-300/30 bg-cyan-300 text-lg font-semibold text-zinc-950 transition hover:bg-cyan-200"
+                onClick={() => {
+                  void handleTogglePlayback();
+                }}
+                type="button"
+              >
+                <span aria-hidden="true">{isPlaybackPlaying ? "II" : "▶"}</span>
+              </button>
               <a
                 className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200"
                 download={encodedAudio.fileName}
@@ -586,14 +631,32 @@ export function CreateWatermarkStudio() {
 
 function EmbeddingVisualization({
   address,
+  audioUrl,
+  canPlay,
+  duration,
+  onDurationChange,
+  onEnded,
+  onPlayStateChange,
+  onTimeChange,
   peaks,
   progress,
+  ref,
   signature,
+  time,
 }: {
   address: string;
+  audioUrl?: string;
+  canPlay: boolean;
+  duration: number;
+  onDurationChange: (duration: number) => void;
+  onEnded: () => void;
+  onPlayStateChange: (isPlaying: boolean) => void;
+  onTimeChange: (time: number) => void;
   peaks: number[];
   progress: number;
+  ref: React.RefObject<HTMLAudioElement | null>;
   signature: string;
+  time: number;
 }) {
   const waveform = peaks.length
     ? peaks
@@ -606,15 +669,38 @@ function EmbeddingVisualization({
   const lowerStrand = buildHelixPath(waveform, viewWidth, centerY, Math.PI);
   const walletStrandText = repeatHelixText(formatReadableHex(address), 16);
   const signatureStrandText = repeatHelixText(formatReadableHex(signature), 7);
+  const timeLabel = canPlay
+    ? `${formatPlaybackTime(time)} / ${formatPlaybackTime(duration)}`
+    : `${Math.round(progress * 100)}% encoded`;
 
   return (
     <div
-      aria-label="Embedding proof payload"
+      aria-label={canPlay ? "Watermarked audio playback" : "Embedding proof payload"}
       className="overflow-hidden rounded-lg bg-[#071014] p-4"
       role="status"
     >
-      <div className="relative overflow-hidden rounded-md bg-zinc-950/45 px-3 py-5">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_22%,rgba(103,232,249,0.18),transparent_28%),radial-gradient(circle_at_82%_72%,rgba(34,211,238,0.14),transparent_32%)]" />
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-cyan-300">
+            {canPlay ? "Now hearing" : "Encoding proof"}
+          </p>
+          <p className="mt-1 font-mono text-sm text-zinc-200">{timeLabel}</p>
+        </div>
+      </div>
+      {audioUrl ? (
+        <audio
+          onDurationChange={(event) =>
+            onDurationChange(event.currentTarget.duration || 0)
+          }
+          onEnded={onEnded}
+          onPause={() => onPlayStateChange(false)}
+          onPlay={() => onPlayStateChange(true)}
+          onTimeUpdate={(event) => onTimeChange(event.currentTarget.currentTime)}
+          ref={ref}
+          src={audioUrl}
+        />
+      ) : null}
+      <div className="relative overflow-hidden rounded-md px-3 py-5">
         <div className="absolute inset-x-8 top-1/2 h-px bg-cyan-300/15" />
         <div className="relative">
           <svg
@@ -717,6 +803,16 @@ function EmbeddingVisualization({
 function repeatHelixText(value: string, count: number) {
   const text = value || "pending";
   return Array.from({ length: count }, () => text).join(" / ");
+}
+
+function formatPlaybackTime(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0:00";
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.floor(value % 60);
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function mergeMissingMetadata(current: SongMetadata, extracted: SongMetadata) {
