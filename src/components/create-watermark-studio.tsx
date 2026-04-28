@@ -13,7 +13,10 @@ import {
   decodeAudioFile,
   encodePayload,
   encodeWatermarkedPcmWithProgress,
+  getOutputFormat,
+  getSupportedOutputFormat,
   inferOutputFormat,
+  isOutputFormatSupported,
   writeAudioFile,
   type OutputFormat,
   type ProofPayload,
@@ -30,6 +33,16 @@ type ProofMetadata = {
   ens: string;
   manifest: string;
 };
+type VisualizationMode = "original" | "signal-atlas" | "eight-bit";
+
+const VISUALIZATION_MODES: Array<{
+  label: string;
+  value: VisualizationMode;
+}> = [
+  { label: "Original", value: "original" },
+  { label: "Signal Atlas", value: "signal-atlas" },
+  { label: "8-Bit", value: "eight-bit" },
+];
 
 export function CreateWatermarkStudio() {
   const { address, chainId, isConnected } = useAccount();
@@ -43,12 +56,15 @@ export function CreateWatermarkStudio() {
   const [status, setStatus] = useState("");
   const [isEncoding, setIsEncoding] = useState(false);
   const [isEmbedding, setIsEmbedding] = useState(false);
+  const [hasVisualizationPreview, setHasVisualizationPreview] = useState(false);
   const [embeddingWaveform, setEmbeddingWaveform] = useState<number[]>([]);
   const [embeddingAddress, setEmbeddingAddress] = useState("");
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const [playbackTime, setPlaybackTime] = useState(0);
   const [isPlaybackPlaying, setIsPlaybackPlaying] = useState(false);
   const [embeddingProgress, setEmbeddingProgress] = useState(0);
+  const [visualizationMode, setVisualizationMode] =
+    useState<VisualizationMode>("original");
   const [embeddingSignature, setEmbeddingSignature] = useState("");
   const [proofMetadata, setProofMetadata] = useState<ProofMetadata>({
     ens: "",
@@ -65,14 +81,29 @@ export function CreateWatermarkStudio() {
 
   async function handleSourceFileChange(file: File | null) {
     setSourceFile(file);
-    setOutputFormat(inferOutputFormat(file));
+    const inferredFormat = inferOutputFormat(file);
+    const supportedFormat = getSupportedOutputFormat(inferredFormat);
+    setOutputFormat(supportedFormat);
     setEncodedAudio(null);
+    setHasVisualizationPreview(false);
+    setEmbeddingProgress(0);
+    setEmbeddingSignature("");
+    setEmbeddingAddress(address ?? "");
     setIsPlaybackPlaying(false);
     setPlaybackDuration(0);
     setPlaybackTime(0);
 
     if (!file) {
+      setStatus("");
       return;
+    }
+
+    if (inferredFormat !== supportedFormat) {
+      setStatus(
+        `${getOutputFormat(inferredFormat).label} export is not supported in this browser. Using ${getOutputFormat(supportedFormat).label}.`,
+      );
+    } else {
+      setStatus("");
     }
 
     try {
@@ -80,6 +111,14 @@ export function CreateWatermarkStudio() {
       setSongMetadata((current) => mergeMissingMetadata(current, metadata));
     } catch {
       // Metadata extraction is best-effort. Encoding can continue without tags.
+    }
+
+    try {
+      const audioBuffer = await decodeAudioFile(file);
+      setEmbeddingWaveform(createWaveformPeaks(audioBuffer));
+      setHasVisualizationPreview(true);
+    } catch {
+      // Waveform preview is best-effort. Encoding will report decode failures.
     }
   }
 
@@ -152,12 +191,23 @@ export function CreateWatermarkStudio() {
       return;
     }
 
+    if (!isOutputFormatSupported(outputFormat)) {
+      setStatus(
+        `${getOutputFormat(outputFormat).label} export is not supported in this browser. Choose WAV or AIFF.`,
+      );
+      return;
+    }
+
     setIsEncoding(true);
     setStatus("Decoding audio locally...");
 
     try {
       const audioBuffer = await decodeAudioFile(sourceFile);
       setEmbeddingWaveform(createWaveformPeaks(audioBuffer));
+      setEmbeddingAddress(address);
+      setEmbeddingSignature("");
+      setEmbeddingProgress(0.03);
+      setIsEmbedding(true);
       setStatus("Fingerprinting audio locally...");
       const audioProofHashes = await createAudioProofHashes(audioBuffer);
       const song = cleanSongMetadata(songMetadata);
@@ -280,24 +330,37 @@ export function CreateWatermarkStudio() {
         {isOptionsOpen ? (
           <div className="mt-4 grid gap-4" id="create-options">
             <div className="ml-auto flex items-center gap-2 rounded-md border border-white/10 bg-zinc-950/70 p-1">
-              {OUTPUT_FORMATS.map((format) => (
-                <button
-                  aria-pressed={outputFormat === format.value}
-                  className={
-                    outputFormat === format.value
-                      ? "rounded bg-cyan-300 px-3 py-1.5 text-sm font-semibold text-cyan-950"
-                      : "rounded px-3 py-1.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
-                  }
-                  key={format.value}
-                  onClick={() => {
-                    setOutputFormat(format.value);
-                    setEncodedAudio(null);
-                  }}
-                  type="button"
-                >
-                  {format.label}
-                </button>
-              ))}
+              {OUTPUT_FORMATS.map((format) => {
+                const isSupported = isOutputFormatSupported(format.value);
+
+                return (
+                  <button
+                    aria-disabled={!isSupported}
+                    aria-pressed={outputFormat === format.value}
+                    className={
+                      !isSupported
+                        ? "cursor-not-allowed rounded px-3 py-1.5 text-sm font-semibold text-zinc-600"
+                        : outputFormat === format.value
+                          ? "rounded bg-cyan-300 px-3 py-1.5 text-sm font-semibold text-cyan-950"
+                          : "rounded px-3 py-1.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                    }
+                    disabled={!isSupported}
+                    key={format.value}
+                    onClick={() => {
+                      setOutputFormat(format.value);
+                      setEncodedAudio(null);
+                    }}
+                    title={
+                      isSupported
+                        ? undefined
+                        : `${format.label} export is not supported in this browser`
+                    }
+                    type="button"
+                  >
+                    {format.label}
+                  </button>
+                );
+              })}
             </div>
             <div className="grid gap-3 rounded-lg border border-white/10 bg-zinc-950/40 p-4 md:grid-cols-2">
               {ensOptions.length ? (
@@ -521,12 +584,13 @@ export function CreateWatermarkStudio() {
             </p>
           ) : null}
 
-          {isEmbedding || encodedAudio ? (
+          {hasVisualizationPreview || isEmbedding || encodedAudio ? (
             <EmbeddingVisualization
               address={embeddingAddress}
               audioUrl={encodedAudio?.url}
               canPlay={Boolean(encodedAudio)}
               duration={playbackDuration}
+              isActive={isEmbedding || isEncoding || isPending}
               onDurationChange={(duration) => setPlaybackDuration(duration)}
               onEnded={() => {
                 setIsPlaybackPlaying(false);
@@ -543,6 +607,8 @@ export function CreateWatermarkStudio() {
               ref={audioRef}
               signature={embeddingSignature}
               time={playbackTime}
+              visualizationMode={visualizationMode}
+              onVisualizationModeChange={setVisualizationMode}
             />
           ) : null}
         </div>
@@ -634,6 +700,7 @@ function EmbeddingVisualization({
   audioUrl,
   canPlay,
   duration,
+  isActive,
   onDurationChange,
   onEnded,
   onPlayStateChange,
@@ -643,11 +710,14 @@ function EmbeddingVisualization({
   ref,
   signature,
   time,
+  visualizationMode,
+  onVisualizationModeChange,
 }: {
   address: string;
   audioUrl?: string;
   canPlay: boolean;
   duration: number;
+  isActive: boolean;
   onDurationChange: (duration: number) => void;
   onEnded: () => void;
   onPlayStateChange: (isPlaying: boolean) => void;
@@ -657,21 +727,23 @@ function EmbeddingVisualization({
   ref: React.RefObject<HTMLAudioElement | null>;
   signature: string;
   time: number;
+  visualizationMode: VisualizationMode;
+  onVisualizationModeChange: (mode: VisualizationMode) => void;
 }) {
   const waveform = peaks.length
     ? peaks
     : [0.34, 0.56, 0.42, 0.76, 0.52, 0.88, 0.46, 0.68];
-  const viewWidth = 240;
-  const viewHeight = 120;
-  const centerY = viewHeight / 2;
-  const waveformPath = buildWaveformArea(waveform, viewWidth, centerY);
-  const upperStrand = buildHelixPath(waveform, viewWidth, centerY, 0);
-  const lowerStrand = buildHelixPath(waveform, viewWidth, centerY, Math.PI);
-  const walletStrandText = repeatHelixText(formatReadableHex(address), 16);
-  const signatureStrandText = repeatHelixText(formatReadableHex(signature), 7);
+  const clampedProgress = clamp01(progress);
+  const statusLabel = canPlay
+    ? "Now hearing"
+    : isActive
+      ? "Encoding proof"
+      : "Signal ready";
   const timeLabel = canPlay
     ? `${formatPlaybackTime(time)} / ${formatPlaybackTime(duration)}`
-    : `${Math.round(progress * 100)}% encoded`;
+    : isActive
+      ? `${Math.round(clampedProgress * 100)}% encoded`
+      : "Ready to encode";
 
   return (
     <div
@@ -682,9 +754,30 @@ function EmbeddingVisualization({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-cyan-300">
-            {canPlay ? "Now hearing" : "Encoding proof"}
+            {statusLabel}
           </p>
           <p className="mt-1 font-mono text-sm text-zinc-200">{timeLabel}</p>
+        </div>
+        <div
+          aria-label="Visualization"
+          className="flex items-center gap-1 rounded-md border border-white/10 bg-zinc-950/70 p-1"
+          role="group"
+        >
+          {VISUALIZATION_MODES.map((mode) => (
+            <button
+              aria-pressed={visualizationMode === mode.value}
+              className={
+                visualizationMode === mode.value
+                  ? "rounded bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-cyan-950"
+                  : "rounded px-3 py-1.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
+              }
+              key={mode.value}
+              onClick={() => onVisualizationModeChange(mode.value)}
+              type="button"
+            >
+              {mode.label}
+            </button>
+          ))}
         </div>
       </div>
       {audioUrl ? (
@@ -700,102 +793,527 @@ function EmbeddingVisualization({
           src={audioUrl}
         />
       ) : null}
-      <div className="relative overflow-hidden rounded-md px-3 py-5">
-        <div className="absolute inset-x-8 top-1/2 h-px bg-cyan-300/15" />
-        <div className="relative">
-          <svg
-            className="h-64 w-full"
-            preserveAspectRatio="none"
-            role="img"
-            viewBox={`0 0 ${viewWidth} ${viewHeight}`}
-          >
-            <defs>
-              <linearGradient id="dna-waveform-fill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#cffafe" stopOpacity="0.95" />
-                <stop offset="48%" stopColor="#67e8f9" stopOpacity="0.34" />
-                <stop offset="100%" stopColor="#0891b2" stopOpacity="0.22" />
-              </linearGradient>
-              <clipPath id="encoding-progress-clip">
-                <rect
-                  height={viewHeight}
-                  width={Math.max(0.1, viewWidth * progress)}
-                  x="0"
-                  y="0"
-                />
-              </clipPath>
-            </defs>
+      {visualizationMode === "original" ? (
+        <OriginalEmbeddingVisualization
+          address={address}
+          peaks={waveform}
+          progress={clampedProgress}
+          signature={signature}
+        />
+      ) : visualizationMode === "signal-atlas" ? (
+        <SignalAtlasVisualization
+          address={address}
+          peaks={waveform}
+          progress={clampedProgress}
+          signature={signature}
+        />
+      ) : (
+        <EightBitVisualization
+          address={address}
+          peaks={waveform}
+          progress={clampedProgress}
+          signature={signature}
+        />
+      )}
+    </div>
+  );
+}
 
-            <path d={upperStrand} fill="none" id="wallet-address-helix" />
-            <path d={lowerStrand} fill="none" id="siwe-signature-helix" />
+function OriginalEmbeddingVisualization({
+  address,
+  peaks,
+  progress,
+  signature,
+}: {
+  address: string;
+  peaks: number[];
+  progress: number;
+  signature: string;
+}) {
+  const viewWidth = 240;
+  const viewHeight = 120;
+  const centerY = viewHeight / 2;
+  const waveformPath = buildWaveformArea(peaks, viewWidth, centerY);
+  const upperStrand = buildHelixPath(peaks, viewWidth, centerY, 0);
+  const lowerStrand = buildHelixPath(peaks, viewWidth, centerY, Math.PI);
+  const walletStrandText = repeatHelixText(formatReadableHex(address), 16);
+  const signatureStrandText = repeatHelixText(formatReadableHex(signature), 7);
 
-            <path
-              d={waveformPath}
-              fill="url(#dna-waveform-fill)"
-              opacity="0.88"
-            />
-            <path
-              d={waveformPath}
+  return (
+    <div className="relative overflow-hidden rounded-md px-3 py-5">
+      <div className="absolute inset-x-8 top-1/2 h-px bg-cyan-300/15" />
+      <div className="relative">
+        <svg
+          className="h-64 w-full"
+          preserveAspectRatio="none"
+          role="img"
+          viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+        >
+          <defs>
+            <linearGradient id="dna-waveform-fill" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#cffafe" stopOpacity="0.95" />
+              <stop offset="48%" stopColor="#67e8f9" stopOpacity="0.34" />
+              <stop offset="100%" stopColor="#0891b2" stopOpacity="0.22" />
+            </linearGradient>
+            <clipPath id="encoding-progress-clip">
+              <rect
+                height={viewHeight}
+                width={Math.max(0.1, viewWidth * progress)}
+                x="0"
+                y="0"
+              />
+            </clipPath>
+          </defs>
+
+          <path d={upperStrand} fill="none" id="wallet-address-helix" />
+          <path d={lowerStrand} fill="none" id="siwe-signature-helix" />
+
+          <path
+            d={waveformPath}
+            fill="url(#dna-waveform-fill)"
+            opacity="0.88"
+          />
+          <path
+            d={waveformPath}
+            fill="none"
+            stroke="#a5f3fc"
+            strokeOpacity="0.35"
+            strokeWidth="0.6"
+          />
+
+          <g clipPath="url(#encoding-progress-clip)">
+            <text
               fill="none"
-              stroke="#a5f3fc"
-              strokeOpacity="0.35"
-              strokeWidth="0.6"
-            />
-
-            <g clipPath="url(#encoding-progress-clip)">
-              <text
-                fill="none"
-                fontFamily="var(--font-geist-mono), monospace"
-                fontSize="6.8"
-                fontWeight="700"
-                letterSpacing="0.35"
-                opacity="0.95"
-                stroke="#020617"
-                strokeWidth="1.2"
-              >
-                <textPath href="#wallet-address-helix" startOffset="-6%">
-                  {walletStrandText}
-                </textPath>
-              </text>
-              <text
-                fill="#f8fafc"
-                fontFamily="var(--font-geist-mono), monospace"
-                fontSize="6.8"
-                fontWeight="700"
-                letterSpacing="0.35"
-              >
-                <textPath href="#wallet-address-helix" startOffset="-6%">
-                  {walletStrandText}
-                </textPath>
-              </text>
-              <text
-                fill="none"
-                fontFamily="var(--font-geist-mono), monospace"
-                fontSize="5.6"
-                fontWeight="650"
-                letterSpacing="0.28"
-                opacity="0.95"
-                stroke="#020617"
-                strokeWidth="1"
-              >
-                <textPath href="#siwe-signature-helix" startOffset="-8%">
-                  {signatureStrandText}
-                </textPath>
-              </text>
-              <text
-                fill="#67e8f9"
-                fontFamily="var(--font-geist-mono), monospace"
-                fontSize="5.6"
-                fontWeight="650"
-                letterSpacing="0.28"
-              >
-                <textPath href="#siwe-signature-helix" startOffset="-8%">
-                  {signatureStrandText}
-                </textPath>
-              </text>
-            </g>
-          </svg>
-        </div>
+              fontFamily="var(--font-geist-mono), monospace"
+              fontSize="6.8"
+              fontWeight="700"
+              letterSpacing="0.35"
+              opacity="0.95"
+              stroke="#020617"
+              strokeWidth="1.2"
+            >
+              <textPath href="#wallet-address-helix" startOffset="-6%">
+                {walletStrandText}
+              </textPath>
+            </text>
+            <text
+              fill="#f8fafc"
+              fontFamily="var(--font-geist-mono), monospace"
+              fontSize="6.8"
+              fontWeight="700"
+              letterSpacing="0.35"
+            >
+              <textPath href="#wallet-address-helix" startOffset="-6%">
+                {walletStrandText}
+              </textPath>
+            </text>
+            <text
+              fill="none"
+              fontFamily="var(--font-geist-mono), monospace"
+              fontSize="5.6"
+              fontWeight="650"
+              letterSpacing="0.28"
+              opacity="0.95"
+              stroke="#020617"
+              strokeWidth="1"
+            >
+              <textPath href="#siwe-signature-helix" startOffset="-8%">
+                {signatureStrandText}
+              </textPath>
+            </text>
+            <text
+              fill="#67e8f9"
+              fontFamily="var(--font-geist-mono), monospace"
+              fontSize="5.6"
+              fontWeight="650"
+              letterSpacing="0.28"
+            >
+              <textPath href="#siwe-signature-helix" startOffset="-8%">
+                {signatureStrandText}
+              </textPath>
+            </text>
+          </g>
+        </svg>
       </div>
+    </div>
+  );
+}
+
+function SignalAtlasVisualization({
+  address,
+  peaks,
+  progress,
+  signature,
+}: {
+  address: string;
+  peaks: number[];
+  progress: number;
+  signature: string;
+}) {
+  const viewWidth = 320;
+  const viewHeight = 190;
+  const plot = {
+    left: 20,
+    right: 304,
+    top: 20,
+    bottom: 142,
+  };
+  const width = plot.right - plot.left;
+  const height = plot.bottom - plot.top;
+  const samples = sampleSeries(peaks, 80);
+  const average = rollingAverage(samples, 7);
+  const cumulative = cumulativeMean(samples);
+  const waveformPath = buildLinePath(samples, plot.left, plot.top, width, height);
+  const averagePath = buildLinePath(average, plot.left, plot.top, width, height);
+  const cumulativePath = buildLinePath(
+    cumulative,
+    plot.left,
+    plot.top + 12,
+    width,
+    height - 24,
+  );
+  const hashValues = hashToValues(`${address}${signature || "pending"}`, 72);
+  const progressX = plot.left + width * progress;
+  const progressSampleIndex = Math.min(
+    samples.length - 1,
+    Math.max(0, Math.floor(progress * (samples.length - 1))),
+  );
+  const activePeak = samples[progressSampleIndex] ?? 0;
+  const activeY = plot.bottom - activePeak * height;
+  const tickValues = [0.25, 0.5, 0.75];
+  const rhythmRows = [151, 160, 169, 178];
+
+  return (
+    <div className="relative overflow-hidden rounded-md border border-white/10 bg-[#f8faf7] px-3 py-4 text-zinc-950">
+      <svg
+        className="h-72 w-full"
+        preserveAspectRatio="none"
+        role="img"
+        viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+      >
+        <defs>
+          <clipPath id="signal-atlas-progress-clip">
+            <rect
+              height={viewHeight}
+              width={Math.max(0.1, progressX)}
+              x="0"
+              y="0"
+            />
+          </clipPath>
+          <linearGradient id="signal-atlas-energy" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#0f766e" stopOpacity="0.38" />
+            <stop offset="100%" stopColor="#0f766e" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+
+        <rect fill="#f8faf7" height={viewHeight} width={viewWidth} />
+        {tickValues.map((tick) => {
+          const y = plot.bottom - tick * height;
+
+          return (
+            <line
+              key={tick}
+              stroke="#111827"
+              strokeOpacity="0.12"
+              strokeWidth="0.5"
+              x1={plot.left}
+              x2={plot.right}
+              y1={y}
+              y2={y}
+            />
+          );
+        })}
+
+        <path
+          d={`${waveformPath} L ${plot.right} ${plot.bottom} L ${plot.left} ${plot.bottom} Z`}
+          fill="url(#signal-atlas-energy)"
+        />
+        <path
+          d={cumulativePath}
+          fill="none"
+          stroke="#dc2626"
+          strokeOpacity="0.68"
+          strokeWidth="1"
+        />
+        <path
+          d={averagePath}
+          fill="none"
+          stroke="#111827"
+          strokeOpacity="0.72"
+          strokeWidth="0.95"
+        />
+        <path
+          d={waveformPath}
+          fill="none"
+          stroke="#0f766e"
+          strokeOpacity="0.9"
+          strokeWidth="1.2"
+        />
+
+        {samples.map((peak, index) => {
+          const x = plot.left + (index / (samples.length - 1)) * width;
+          const y = plot.bottom - peak * height;
+          const isMajor = index % 10 === 0;
+
+          return (
+            <g key={`sample-${index}`}>
+              <line
+                stroke="#111827"
+                strokeOpacity={isMajor ? "0.16" : "0.055"}
+                strokeWidth={isMajor ? "0.45" : "0.25"}
+                x1={x}
+                x2={x}
+                y1={plot.bottom}
+                y2={y}
+              />
+              <circle
+                cx={x}
+                cy={y}
+                fill={index / (samples.length - 1) <= progress ? "#0f766e" : "#f8faf7"}
+                r={isMajor ? "1.45" : "0.88"}
+                stroke="#0f766e"
+                strokeOpacity="0.82"
+                strokeWidth="0.45"
+              />
+            </g>
+          );
+        })}
+
+        {hashValues.map((value, index) => {
+          const x = plot.left + (index / (hashValues.length - 1)) * width;
+          const row = rhythmRows[index % rhythmRows.length];
+          const heightValue = 2 + value * 7;
+          const isEncoded = index / (hashValues.length - 1) <= progress;
+
+          return (
+            <g key={`hash-${index}`}>
+              <rect
+                fill={isEncoded ? "#0891b2" : "#111827"}
+                height={heightValue}
+                opacity={isEncoded ? "0.78" : "0.18"}
+                width="1.35"
+                x={x}
+                y={row - heightValue / 2}
+              />
+              {value > 0.72 ? (
+                <circle
+                  cx={x}
+                  cy={row + 8}
+                  fill={isEncoded ? "#dc2626" : "#111827"}
+                  opacity={isEncoded ? "0.74" : "0.18"}
+                  r="0.9"
+                />
+              ) : null}
+            </g>
+          );
+        })}
+
+        <g clipPath="url(#signal-atlas-progress-clip)">
+          <rect
+            fill="#67e8f9"
+            height={viewHeight}
+            opacity="0.08"
+            width={viewWidth}
+          />
+          <path
+            d={waveformPath}
+            fill="none"
+            stroke="#0e7490"
+            strokeWidth="2"
+          />
+        </g>
+
+        <line
+          stroke="#dc2626"
+          strokeDasharray="2 2"
+          strokeOpacity="0.72"
+          strokeWidth="0.8"
+          x1={progressX}
+          x2={progressX}
+          y1="14"
+          y2="181"
+        />
+        <circle
+          cx={progressX}
+          cy={activeY}
+          fill="#f8faf7"
+          r="4.4"
+          stroke="#dc2626"
+          strokeWidth="1.2"
+        />
+        <circle cx={progressX} cy={activeY} fill="#dc2626" r="1.4" />
+      </svg>
+    </div>
+  );
+}
+
+function EightBitVisualization({
+  address,
+  peaks,
+  progress,
+  signature,
+}: {
+  address: string;
+  peaks: number[];
+  progress: number;
+  signature: string;
+}) {
+  const viewWidth = 320;
+  const viewHeight = 190;
+  const gridSize = 8;
+  const samples = sampleSeries(peaks, 32);
+  const hashValues = hashToValues(`${signature || address || "pending"}`, 96);
+  const progressColumns = Math.floor(progress * samples.length);
+  const progressX = 12 + progress * 296;
+  const waveBottom = 132;
+  const palette = ["#38bdf8", "#facc15", "#fb7185", "#4ade80"];
+  const stars = hashValues.slice(0, 48).map((value, index) => ({
+    color: palette[index % palette.length],
+    size: value > 0.72 ? 3 : 2,
+    x: 12 + ((index * 29 + Math.floor(value * 80)) % 296),
+    y: 12 + ((index * 17 + Math.floor(value * 54)) % 74),
+  }));
+  const payloadBlocks = hashValues.slice(48, 88);
+
+  return (
+    <div className="relative overflow-hidden rounded-md border border-sky-300/30 bg-[#111827] px-3 py-4">
+      <svg
+        className="h-72 w-full [image-rendering:pixelated]"
+        preserveAspectRatio="none"
+        role="img"
+        shapeRendering="crispEdges"
+        viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+      >
+        <defs>
+          <clipPath id="eight-bit-progress-clip">
+            <rect
+              height={viewHeight}
+              width={Math.max(0.1, progressX)}
+              x="0"
+              y="0"
+            />
+          </clipPath>
+        </defs>
+
+        <rect fill="#172554" height={viewHeight} width={viewWidth} />
+        <rect fill="#020617" height="70" opacity="0.46" width={viewWidth} />
+
+        {Array.from({ length: 40 }, (_, index) => (
+          <rect
+            fill={index % 2 === 0 ? "#1e3a8a" : "#0f172a"}
+            height="4"
+            key={`skyline-${index}`}
+            opacity="0.55"
+            width="8"
+            x={index * 8}
+            y={76 + ((index * 11) % 28)}
+          />
+        ))}
+
+        {stars.map((star, index) => (
+          <rect
+            fill={star.color}
+            height={star.size}
+            key={`star-${index}`}
+            opacity={index / stars.length <= progress ? "0.92" : "0.32"}
+            width={star.size}
+            x={star.x}
+            y={star.y}
+          />
+        ))}
+
+        <rect fill="#0f172a" height="46" width={viewWidth} y="132" />
+        <rect fill="#334155" height="4" width={viewWidth} y="132" />
+        <rect fill="#475569" height="4" width={viewWidth} y="176" />
+
+        {samples.map((peak, index) => {
+          const x = 12 + index * 9.25;
+          const barHeight = Math.max(gridSize, Math.round(peak * 56 / gridSize) * gridSize);
+          const isEncoded = index <= progressColumns;
+          const color = isEncoded ? palette[index % palette.length] : "#64748b";
+
+          return (
+            <g key={`pixel-wave-${index}`}>
+              <rect
+                fill="#020617"
+                height={barHeight + 4}
+                width="7"
+                x={x + 1}
+                y={waveBottom - barHeight + 2}
+              />
+              <rect
+                fill={color}
+                height={barHeight}
+                opacity={isEncoded ? "0.95" : "0.38"}
+                width="7"
+                x={x}
+                y={waveBottom - barHeight}
+              />
+              <rect
+                fill="#f8fafc"
+                height="2"
+                opacity={isEncoded ? "0.42" : "0.12"}
+                width="7"
+                x={x}
+                y={waveBottom - barHeight}
+              />
+            </g>
+          );
+        })}
+
+        {payloadBlocks.map((value, index) => {
+          const x = 10 + (index % 20) * 15;
+          const y = 146 + Math.floor(index / 20) * 9;
+          const isEncoded = index / payloadBlocks.length <= progress;
+
+          return (
+            <rect
+              fill={isEncoded ? palette[(index + 1) % palette.length] : "#334155"}
+              height={value > 0.52 ? "6" : "3"}
+              key={`payload-block-${index}`}
+              opacity={isEncoded ? "0.92" : "0.42"}
+              width={value > 0.74 ? "10" : "6"}
+              x={x}
+              y={y}
+            />
+          );
+        })}
+
+        <g clipPath="url(#eight-bit-progress-clip)">
+          <rect fill="#67e8f9" height={viewHeight} opacity="0.08" width={viewWidth} />
+          <polyline
+            fill="none"
+            points={samples
+              .map((peak, index) => {
+                const x = 12 + index * 9.25 + 3.5;
+                const y = waveBottom - Math.max(8, peak * 56);
+
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+              })
+              .join(" ")}
+            stroke="#f8fafc"
+            strokeWidth="2"
+          />
+        </g>
+
+        <rect fill="#facc15" height="72" width="4" x={progressX} y="82" />
+        <rect fill="#020617" height="72" opacity="0.5" width="2" x={progressX + 4} y="82" />
+        <rect fill="#fb7185" height="8" width="14" x={progressX - 5} y="76" />
+        <rect fill="#f8fafc" height="4" width="6" x={progressX - 1} y="78" />
+
+        <rect fill="#020617" height="8" width={viewWidth} y="182" />
+        {Array.from({ length: 40 }, (_, index) => (
+          <rect
+            fill={index % 2 === 0 ? "#38bdf8" : "#facc15"}
+            height="4"
+            key={`floor-${index}`}
+            opacity="0.82"
+            width="4"
+            x={index * 8}
+            y="182"
+          />
+        ))}
+      </svg>
     </div>
   );
 }
@@ -899,6 +1417,84 @@ function buildHelixPath(
   });
 
   return points.join(" ");
+}
+
+function buildLinePath(
+  values: number[],
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+) {
+  return values
+    .map((value, index) => {
+      const x = left + (index / (values.length - 1)) * width;
+      const y = top + (1 - clamp01(value)) * height;
+
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+function sampleSeries(values: number[], count: number) {
+  if (!values.length) {
+    return Array.from({ length: count }, (_, index) => {
+      const phase = index / Math.max(1, count - 1);
+
+      return 0.3 + Math.sin(phase * Math.PI * 6) * 0.12;
+    });
+  }
+
+  return Array.from({ length: count }, (_, index) => {
+    const sourceIndex = (index / Math.max(1, count - 1)) * (values.length - 1);
+    const lowerIndex = Math.floor(sourceIndex);
+    const upperIndex = Math.min(values.length - 1, lowerIndex + 1);
+    const blend = sourceIndex - lowerIndex;
+    const lower = values[lowerIndex] ?? 0;
+    const upper = values[upperIndex] ?? lower;
+
+    return clamp01(lower + (upper - lower) * blend);
+  });
+}
+
+function rollingAverage(values: number[], windowSize: number) {
+  return values.map((_, index) => {
+    const start = Math.max(0, index - Math.floor(windowSize / 2));
+    const end = Math.min(values.length, start + windowSize);
+    const window = values.slice(start, end);
+    const total = window.reduce((sum, value) => sum + value, 0);
+
+    return total / window.length;
+  });
+}
+
+function cumulativeMean(values: number[]) {
+  let total = 0;
+
+  return values.map((value, index) => {
+    total += value;
+
+    return total / (index + 1);
+  });
+}
+
+function hashToValues(value: string, count: number) {
+  const source = value || "pending";
+
+  return Array.from({ length: count }, (_, index) => {
+    const charCode = source.charCodeAt(index % source.length);
+    const mixed = (charCode * 17 + index * 31 + source.length * 13) % 101;
+
+    return mixed / 100;
+  });
+}
+
+function clamp01(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.min(1, Math.max(0, value));
 }
 
 function createWaveformPeaks(audioBuffer: AudioBuffer) {

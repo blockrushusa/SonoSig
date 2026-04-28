@@ -86,6 +86,24 @@ const faqs = [
       "When available, SonoSig reads common ID3, MP4/iTunes, and WAV INFO tags for title, artist, album, album artist, composer, genre, release date, year, track, disc, ISRC, BPM, key, publisher, copyright, and comments. These fields stay editable before signing.",
   },
   {
+    question: "How can I use AI to make music?",
+    answer:
+      "Use an AI music generator to sketch ideas, create loops, draft lyrics, build background beds, or explore alternate versions. Export the audio, review the tool's license terms, add clear metadata, then encode the finished file with SonoSig so the generated track carries a wallet-signed proof.",
+    links: [
+      {
+        href: "https://interactivedemo.withgoogle.com/songmaker/",
+        label: "Google Song Maker",
+      },
+      { href: "https://suno.com/", label: "Suno" },
+      { href: "https://www.udio.com/", label: "Udio" },
+      { href: "https://stableaudio.com/", label: "Stable Audio" },
+      {
+        href: "https://www.loudly.com/ai-music-generator",
+        label: "Loudly",
+      },
+    ],
+  },
+  {
     question: "Why is WAV or AIFF preferred for verification?",
     answer:
       "WAV and AIFF keep the embedded payload in PCM samples, so SonoSig can recompute the signed audio hash directly. M4A and OGG are available for convenient local export and sharing, but lossy encoding can change sample data, so exact audio-hash verification is strongest with WAV and AIFF.",
@@ -183,6 +201,21 @@ export default function FaqPage() {
                 <p className="mt-3 text-sm leading-6 text-zinc-300">
                   {item.answer}
                 </p>
+                {item.links?.length ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {item.links.map((link) => (
+                      <a
+                        className="rounded-md border border-cyan-300/30 px-3 py-1.5 text-sm font-semibold text-cyan-200 transition hover:border-cyan-200 hover:bg-cyan-300/10 hover:text-white"
+                        href={link.href}
+                        key={link.href}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {link.label}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
               </article>
             ))}
           </section>

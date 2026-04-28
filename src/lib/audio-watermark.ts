@@ -20,6 +20,30 @@ type PcmAudio = {
   sampleRate: number;
 };
 
+type AudioContextConstructor = typeof AudioContext;
+
+type OpusRecorderConstructor = new (config?: {
+  encoderApplication?: number;
+  encoderBitRate?: number;
+  encoderPath?: string;
+  encoderSampleRate?: number;
+  monitorGain?: number;
+  numberOfChannels?: number;
+  recordingGain?: number;
+  sourceNode?: MediaStreamAudioSourceNode;
+  streamPages?: boolean;
+}) => {
+  close: () => Promise<void> | void;
+  ondataavailable: (arrayBuffer: Uint8Array) => void;
+  onstop: () => void;
+  start: () => Promise<void>;
+  stop: () => Promise<void>;
+};
+
+type OpusRecorderModule =
+  | OpusRecorderConstructor
+  | { default: OpusRecorderConstructor };
+
 export type OutputFormat = "wav" | "aiff" | "m4a" | "ogg";
 
 export const OUTPUT_FORMATS: Array<{
@@ -300,6 +324,11 @@ export async function writeAudioFile(
   payloadBytes: Uint8Array,
   onProgress?: (progress: number) => void,
 ) {
+  if (!isOutputFormatSupported(format)) {
+    const label = getOutputFormat(format).label;
+    throw new Error(`${label} export is not supported in this browser. Choose WAV or AIFF.`);
+  }
+
   if (format === "aiff") {
     const outputBytes = writeAiff(audio.pcm, audio.channels, audio.sampleRate);
     onProgress?.(1);
@@ -341,6 +370,26 @@ export async function writeAudioFile(
 
 export function getOutputFormat(format: OutputFormat) {
   return OUTPUT_FORMATS.find((item) => item.value === format) ?? OUTPUT_FORMATS[0];
+}
+
+export function isOutputFormatSupported(format: OutputFormat) {
+  if (format === "wav" || format === "aiff") {
+    return true;
+  }
+
+  if (format === "m4a") {
+    return Boolean(getSupportedM4aMimeType());
+  }
+
+  if (format === "ogg") {
+    return Boolean(getSupportedOggMimeType() || isWasmOggEncodingSupported());
+  }
+
+  return false;
+}
+
+export function getSupportedOutputFormat(format: OutputFormat): OutputFormat {
+  return isOutputFormatSupported(format) ? format : "wav";
 }
 
 export function inferOutputFormat(file: File | null): OutputFormat {
@@ -650,18 +699,108 @@ async function writeOgg(
 ) {
   const mimeType = getSupportedOggMimeType();
 
-  if (!mimeType) {
+  if (mimeType) {
+    return writeMediaRecorderAudio(
+      pcm,
+      channels,
+      sampleRate,
+      mimeType,
+      "OGG",
+      onProgress,
+    );
+  }
+
+  if (!isWasmOggEncodingSupported()) {
     throw new Error("This browser does not support local OGG export.");
   }
 
-  return writeMediaRecorderAudio(
+  return writeWasmOggOpus(
     pcm,
     channels,
     sampleRate,
-    mimeType,
-    "OGG",
     onProgress,
   );
+}
+
+async function writeWasmOggOpus(
+  pcm: Int16Array,
+  channels: number,
+  sampleRate: number,
+  onProgress?: (progress: number) => void,
+) {
+  const AudioContextClass = getAudioContextClass();
+
+  if (!AudioContextClass) {
+    throw new Error("This browser does not support local OGG export.");
+  }
+
+  const outputChannels = Math.min(channels, 2);
+  const audioContext = new AudioContextClass({ sampleRate });
+  const audioBuffer = createAudioBufferFromPcm(
+    audioContext,
+    pcm,
+    channels,
+    sampleRate,
+    outputChannels,
+  );
+  const destination = audioContext.createMediaStreamDestination();
+  const sourceNode = audioContext.createMediaStreamSource(destination.stream);
+  const source = audioContext.createBufferSource();
+  const Recorder = await loadOpusRecorder();
+  const recorder = new Recorder({
+    encoderApplication: 2049,
+    encoderBitRate: outputChannels === 1 ? 96000 : 160000,
+    encoderPath: "/opus-encoderWorker.min.js",
+    encoderSampleRate: 48000,
+    monitorGain: 0,
+    numberOfChannels: outputChannels,
+    recordingGain: 1,
+    sourceNode,
+    streamPages: false,
+  });
+  const chunks: BlobPart[] = [];
+
+  source.buffer = audioBuffer;
+  source.connect(destination);
+
+  const stopped = new Promise<Blob>((resolve) => {
+    recorder.ondataavailable = (arrayBuffer) => {
+      chunks.push(toArrayBuffer(arrayBuffer));
+    };
+    recorder.onstop = () => {
+      resolve(new Blob(chunks, { type: "audio/ogg;codecs=opus" }));
+    };
+  });
+
+  try {
+    await recorder.start();
+    source.start();
+    const durationMs = (audioBuffer.length / sampleRate) * 1000;
+    const startedAt = performance.now();
+    const progressTimer = window.setInterval(() => {
+      const elapsed = performance.now() - startedAt;
+      onProgress?.(Math.min(0.98, elapsed / durationMs));
+    }, 100);
+
+    source.addEventListener(
+      "ended",
+      () => {
+        window.clearInterval(progressTimer);
+        void recorder.stop();
+      },
+      { once: true },
+    );
+
+    const blob = await stopped;
+    onProgress?.(1);
+    return blob;
+  } finally {
+    source.disconnect();
+    sourceNode.disconnect();
+    destination.disconnect();
+    await recorder.close();
+    await audioContext.close();
+  }
 }
 
 async function writeMediaRecorderAudio(
@@ -672,22 +811,20 @@ async function writeMediaRecorderAudio(
   formatLabel: string,
   onProgress?: (progress: number) => void,
 ) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  const audioContext = new AudioContextClass({ sampleRate });
-  const audioBuffer = audioContext.createBuffer(
-    channels,
-    pcm.length / channels,
-    sampleRate,
-  );
+  const AudioContextClass = getAudioContextClass();
 
-  for (let channel = 0; channel < channels; channel += 1) {
-    const channelData = audioBuffer.getChannelData(channel);
-
-    for (let frame = 0; frame < audioBuffer.length; frame += 1) {
-      channelData[frame] = pcm[frame * channels + channel] / 32768;
-    }
+  if (!AudioContextClass) {
+    throw new Error(`${formatLabel} export is not supported in this browser.`);
   }
 
+  const audioContext = new AudioContextClass({ sampleRate });
+  const audioBuffer = createAudioBufferFromPcm(
+    audioContext,
+    pcm,
+    channels,
+    sampleRate,
+    channels,
+  );
   const destination = audioContext.createMediaStreamDestination();
   const source = audioContext.createBufferSource();
   source.buffer = audioBuffer;
@@ -738,6 +875,62 @@ async function writeMediaRecorderAudio(
   await audioContext.close();
 
   return blob;
+}
+
+function createAudioBufferFromPcm(
+  audioContext: BaseAudioContext,
+  pcm: Int16Array,
+  inputChannels: number,
+  sampleRate: number,
+  outputChannels: number,
+) {
+  const audioBuffer = audioContext.createBuffer(
+    outputChannels,
+    pcm.length / inputChannels,
+    sampleRate,
+  );
+
+  for (let channel = 0; channel < outputChannels; channel += 1) {
+    const channelData = audioBuffer.getChannelData(channel);
+
+    for (let frame = 0; frame < audioBuffer.length; frame += 1) {
+      if (inputChannels <= outputChannels) {
+        channelData[frame] = pcm[frame * inputChannels + channel] / 32768;
+      } else {
+        channelData[frame] =
+          downmixSample(pcm, frame, inputChannels, channel) / 32768;
+      }
+    }
+  }
+
+  return audioBuffer;
+}
+
+function downmixSample(
+  pcm: Int16Array,
+  frame: number,
+  inputChannels: number,
+  outputChannel: number,
+) {
+  let sample = 0;
+  let count = 0;
+
+  for (
+    let inputChannel = outputChannel;
+    inputChannel < inputChannels;
+    inputChannel += 2
+  ) {
+    sample += pcm[frame * inputChannels + inputChannel];
+    count += 1;
+  }
+
+  return sample / count;
+}
+
+async function loadOpusRecorder() {
+  const recorderModule = (await import("opus-recorder")) as OpusRecorderModule;
+
+  return "default" in recorderModule ? recorderModule.default : recorderModule;
 }
 
 function floatToInt16(sample: number) {
@@ -888,12 +1081,20 @@ export function getChainName(chainId: number) {
 }
 
 function getSupportedM4aMimeType() {
+  if (typeof MediaRecorder === "undefined") {
+    return undefined;
+  }
+
   const mimeTypes = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4"];
 
   return mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
 }
 
 function getSupportedOggMimeType() {
+  if (typeof MediaRecorder === "undefined") {
+    return undefined;
+  }
+
   const mimeTypes = [
     "audio/ogg;codecs=opus",
     "audio/ogg;codecs=vorbis",
@@ -901,6 +1102,24 @@ function getSupportedOggMimeType() {
   ];
 
   return mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+}
+
+function isWasmOggEncodingSupported() {
+  return Boolean(
+    getAudioContextClass() &&
+      typeof WebAssembly !== "undefined" &&
+      typeof Worker !== "undefined" &&
+      typeof navigator !== "undefined" &&
+      navigator.mediaDevices?.getUserMedia,
+  );
+}
+
+function getAudioContextClass(): AudioContextConstructor | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return window.AudioContext || window.webkitAudioContext;
 }
 
 function nextFrame() {

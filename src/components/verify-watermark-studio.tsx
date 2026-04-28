@@ -78,7 +78,7 @@ export function VerifyWatermarkStudio() {
   const [verification, setVerification] = useState<VerificationResult | null>(
     null,
   );
-  const [status, setStatus] = useState("Select a watermarked audio file.");
+  const [status, setStatus] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [activeTab, setActiveTab] = useState<VerifyTab>("proof");
 
@@ -163,20 +163,11 @@ export function VerifyWatermarkStudio() {
       <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
         Verify
       </p>
-      <h1 className="mt-5 text-4xl font-semibold leading-tight text-white md:text-5xl">
-        Verify a file.
-      </h1>
-      <p className="mt-5 max-w-2xl text-base leading-7 text-zinc-300">
-        Select a watermarked WAV, AIFF, M4A, or OGG and verify the embedded
-        wallet signature locally in the browser.
-      </p>
 
       <div className="mt-8 grid gap-4">
-        <label className="grid gap-2">
-          <span className="text-sm font-medium text-zinc-200">
-            Watermarked audio file
-          </span>
+        <label>
           <input
+            aria-label="Upload watermarked audio file"
             accept="audio/wav,audio/aiff,audio/mp4,audio/ogg,.wav,.aif,.aiff,.m4a,.oga,.ogg,.opus"
             className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950"
             disabled={isVerifying}
