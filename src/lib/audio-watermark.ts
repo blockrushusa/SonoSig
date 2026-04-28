@@ -77,6 +77,7 @@ export type ProofPayload = {
   statement: string;
   audioFingerprint: string;
   chain?: string;
+  sourceFileName?: string;
   verifiedBy?: string;
   song?: {
     album?: string;
@@ -1067,6 +1068,8 @@ function isProofPayload(value: unknown): value is ProofPayload {
     typeof payload.statement === "string" &&
     typeof payload.audioFingerprint === "string" &&
     (typeof payload.chain === "undefined" || typeof payload.chain === "string") &&
+    (typeof payload.sourceFileName === "undefined" ||
+      typeof payload.sourceFileName === "string") &&
     (typeof payload.verifiedBy === "undefined" ||
       typeof payload.verifiedBy === "string") &&
     (typeof payload.song === "undefined" ||

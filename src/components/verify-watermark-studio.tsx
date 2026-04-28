@@ -3,29 +3,17 @@
 import { useState } from "react";
 import { verifyMessage } from "viem";
 import {
+  ProofDetailsTabs,
+  type AudioProfile,
+  type ProofDetailsTab,
+} from "@/components/proof-details-tabs";
+import {
   buildSiweMessage,
   createWatermarkedAudioProofHashes,
   decodeAudioFile,
-  getChainName,
   readPayloadFromAudio,
   type ProofPayload,
 } from "@/lib/audio-watermark";
-
-type AudioProfile = {
-  bitDepth?: string;
-  bitRate?: string;
-  channels?: string;
-  dataSize?: string;
-  duration?: string;
-  encoding?: string;
-  fileName: string;
-  fileSize: string;
-  format: string;
-  lastModified: string;
-  mimeType: string;
-  sampleFrames?: string;
-  sampleRate?: string;
-};
 
 type AudioHeader = {
   bitDepth?: string;
@@ -50,37 +38,13 @@ type VerificationResult =
       payload?: ProofPayload;
     };
 
-type VerifyTab = "proof" | "metadata" | "profile";
-
-const SONG_METADATA_LABELS: Array<{
-  key: keyof NonNullable<ProofPayload["song"]>;
-  label: string;
-}> = [
-  { key: "title", label: "Song" },
-  { key: "artist", label: "Artist" },
-  { key: "albumArtist", label: "Album Artist" },
-  { key: "album", label: "Album" },
-  { key: "composer", label: "Composer" },
-  { key: "genre", label: "Genre" },
-  { key: "releaseDate", label: "Release Date" },
-  { key: "year", label: "Year" },
-  { key: "trackNumber", label: "Track" },
-  { key: "discNumber", label: "Disc" },
-  { key: "isrc", label: "ISRC" },
-  { key: "bpm", label: "BPM" },
-  { key: "key", label: "Key" },
-  { key: "publisher", label: "Publisher" },
-  { key: "copyright", label: "Copyright" },
-  { key: "notes", label: "Notes" },
-];
-
 export function VerifyWatermarkStudio() {
   const [verification, setVerification] = useState<VerificationResult | null>(
     null,
   );
   const [status, setStatus] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
-  const [activeTab, setActiveTab] = useState<VerifyTab>("proof");
+  const [activeTab, setActiveTab] = useState<ProofDetailsTab>("proof");
 
   async function handleVerify(file: File) {
     setVerification(null);
@@ -204,7 +168,7 @@ export function VerifyWatermarkStudio() {
               {verification.reason}
             </p>
           ) : (
-            <VerificationDetails
+            <ProofDetailsTabs
               activeTab={activeTab}
               onTabChange={setActiveTab}
               payload={verification.payload}
@@ -216,137 +180,6 @@ export function VerifyWatermarkStudio() {
         </div>
       ) : null}
     </section>
-  );
-}
-
-function VerificationDetails({
-  activeTab,
-  audioHashStatus,
-  audioHashStatusReason,
-  onTabChange,
-  payload,
-  profile,
-}: {
-  activeTab: VerifyTab;
-  audioHashStatus: "verified" | "unverified";
-  audioHashStatusReason?: string;
-  onTabChange: (tab: VerifyTab) => void;
-  payload: ProofPayload;
-  profile: AudioProfile;
-}) {
-  const songEntries = getSongMetadataEntries(payload);
-  const hasMetadata = songEntries.length > 0;
-  const profileEntries = getProfileEntries(profile);
-
-  return (
-    <div className="mt-4">
-      <div className="inline-flex rounded-md border border-white/10 bg-white/[0.04] p-1">
-        <button
-          aria-pressed={activeTab === "proof"}
-          className={
-            activeTab === "proof"
-              ? "rounded bg-cyan-300 px-3 py-1.5 text-sm font-semibold text-cyan-950"
-              : "rounded px-3 py-1.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
-          }
-          onClick={() => onTabChange("proof")}
-          type="button"
-        >
-          Proof
-        </button>
-        <button
-          aria-pressed={activeTab === "metadata"}
-          className={
-            activeTab === "metadata"
-              ? "rounded bg-cyan-300 px-3 py-1.5 text-sm font-semibold text-cyan-950"
-              : "rounded px-3 py-1.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-          }
-          disabled={!hasMetadata}
-          onClick={() => onTabChange("metadata")}
-          type="button"
-        >
-          Metadata
-        </button>
-        <button
-          aria-pressed={activeTab === "profile"}
-          className={
-            activeTab === "profile"
-              ? "rounded bg-cyan-300 px-3 py-1.5 text-sm font-semibold text-cyan-950"
-              : "rounded px-3 py-1.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
-          }
-          onClick={() => onTabChange("profile")}
-          type="button"
-        >
-          Profile
-        </button>
-      </div>
-
-      {activeTab === "metadata" && hasMetadata ? (
-        <dl className="mt-4 grid gap-3 text-sm text-zinc-300">
-          {songEntries.map((entry) => (
-            <div key={entry.label}>
-              <dt className="text-zinc-500">{entry.label}</dt>
-              <dd className="break-all">{entry.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : activeTab === "profile" ? (
-        <dl className="mt-4 grid gap-3 text-sm text-zinc-300">
-          {profileEntries.map((entry) => (
-            <div key={entry.label}>
-              <dt className="text-zinc-500">{entry.label}</dt>
-              <dd className="break-all">{entry.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <dl className="mt-4 grid gap-3 text-sm text-zinc-300">
-          <div>
-            <dt className="text-zinc-500">Wallet</dt>
-            <dd className="break-all">{payload.wallet}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Issued</dt>
-            <dd>{payload.issued_at}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Chain</dt>
-            <dd>{payload.chain ?? getChainName(payload.chain_id)}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Chain ID</dt>
-            <dd>{payload.chain_id}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">ENS</dt>
-            <dd>{payload.ens || "Not provided"}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Manifest</dt>
-            <dd className="break-all">{payload.manifest || "Not provided"}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Verified by</dt>
-            <dd>{payload.verifiedBy ?? "SonoSig.com"}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Audio hash verification</dt>
-            <dd>
-              {audioHashStatus === "verified"
-                ? "Verified"
-                : audioHashStatusReason}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Audio fingerprint</dt>
-            <dd className="break-all font-mono">{payload.audio_fingerprint}</dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Audio hash</dt>
-            <dd className="break-all font-mono">{payload.audio_hash}</dd>
-          </div>
-        </dl>
-      )}
-    </div>
   );
 }
 
@@ -483,26 +316,6 @@ function readAiffHeader(bytes: Uint8Array) {
   };
 }
 
-function getProfileEntries(profile: AudioProfile) {
-  return [
-    { label: "File Name", value: profile.fileName },
-    { label: "Format", value: profile.format },
-    { label: "Encoding", value: profile.encoding },
-    { label: "Duration", value: profile.duration },
-    { label: "Bitrate", value: profile.bitRate },
-    { label: "Sample Rate", value: profile.sampleRate },
-    { label: "Channels", value: profile.channels },
-    { label: "Bit Depth", value: profile.bitDepth },
-    { label: "Sample Frames", value: profile.sampleFrames },
-    { label: "Audio Data Size", value: profile.dataSize },
-    { label: "File Size", value: profile.fileSize },
-    { label: "MIME Type", value: profile.mimeType },
-    { label: "Last Modified", value: profile.lastModified },
-  ].filter((entry): entry is { label: string; value: string } =>
-    Boolean(entry.value),
-  );
-}
-
 function readAscii(bytes: Uint8Array, offset: number, length: number) {
   return new TextDecoder("latin1").decode(bytes.slice(offset, offset + length));
 }
@@ -531,19 +344,4 @@ function formatDuration(value: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}.${milliseconds
     .toString()
     .padStart(3, "0")}`;
-}
-
-function getSongMetadataEntries(payload: ProofPayload) {
-  const song = payload.song;
-
-  if (!song) {
-    return [];
-  }
-
-  return SONG_METADATA_LABELS.map(({ key, label }) => ({
-    label,
-    value: song[key],
-  })).filter((entry): entry is { label: string; value: string } =>
-    Boolean(entry.value),
-  );
 }

@@ -227,6 +227,7 @@ export function CreateWatermarkStudio() {
       const payload = {
         v: 1,
         ...siweFields,
+        sourceFileName: sourceFile.name,
         signature,
       } as const;
       localStorage.setItem("sonosig:last-proof", JSON.stringify(payload));
@@ -569,15 +570,6 @@ export function CreateWatermarkStudio() {
             />
           </label>
 
-          <button
-            className="ml-auto w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!canEncode || isEncoding || isPending}
-            onClick={handleEncode}
-            type="button"
-          >
-            {isEncoding || isPending ? "Encoding..." : "Continue"}
-          </button>
-
           {status ? (
             <p className="text-center text-sm leading-6 text-zinc-400">
               {status}
@@ -610,6 +602,17 @@ export function CreateWatermarkStudio() {
               visualizationMode={visualizationMode}
               onVisualizationModeChange={setVisualizationMode}
             />
+          ) : null}
+
+          {!encodedAudio ? (
+            <button
+              className="ml-auto w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!canEncode || isEncoding || isPending}
+              onClick={handleEncode}
+              type="button"
+            >
+              {isEncoding || isPending ? "Encoding..." : "Continue"}
+            </button>
           ) : null}
         </div>
 
@@ -809,10 +812,8 @@ function EmbeddingVisualization({
         />
       ) : (
         <EightBitVisualization
-          address={address}
           peaks={waveform}
           progress={clampedProgress}
-          signature={signature}
         />
       )}
     </div>
@@ -1148,35 +1149,23 @@ function SignalAtlasVisualization({
 }
 
 function EightBitVisualization({
-  address,
   peaks,
   progress,
-  signature,
 }: {
-  address: string;
   peaks: number[];
   progress: number;
-  signature: string;
 }) {
-  const viewWidth = 320;
-  const viewHeight = 190;
-  const gridSize = 8;
-  const samples = sampleSeries(peaks, 32);
-  const hashValues = hashToValues(`${signature || address || "pending"}`, 96);
-  const progressColumns = Math.floor(progress * samples.length);
-  const progressX = 12 + progress * 296;
-  const waveBottom = 132;
-  const palette = ["#38bdf8", "#facc15", "#fb7185", "#4ade80"];
-  const stars = hashValues.slice(0, 48).map((value, index) => ({
-    color: palette[index % palette.length],
-    size: value > 0.72 ? 3 : 2,
-    x: 12 + ((index * 29 + Math.floor(value * 80)) % 296),
-    y: 12 + ((index * 17 + Math.floor(value * 54)) % 74),
-  }));
-  const payloadBlocks = hashValues.slice(48, 88);
+  const columns = 64;
+  const rows = 32;
+  const cellWidth = 5;
+  const cellHeight = 5;
+  const viewWidth = columns * cellWidth;
+  const viewHeight = rows * cellHeight;
+  const center = (rows - 1) / 2;
+  const cells = buildEightBitAudioCells(peaks, columns, rows);
 
   return (
-    <div className="relative overflow-hidden rounded-md border border-sky-300/30 bg-[#111827] px-3 py-4">
+    <div className="relative overflow-hidden rounded-md border border-sky-300/30 bg-[#06151d] p-3">
       <svg
         className="h-72 w-full [image-rendering:pixelated]"
         preserveAspectRatio="none"
@@ -1184,138 +1173,117 @@ function EightBitVisualization({
         shapeRendering="crispEdges"
         viewBox={`0 0 ${viewWidth} ${viewHeight}`}
       >
-        <defs>
-          <clipPath id="eight-bit-progress-clip">
-            <rect
-              height={viewHeight}
-              width={Math.max(0.1, progressX)}
-              x="0"
-              y="0"
-            />
-          </clipPath>
-        </defs>
-
-        <rect fill="#172554" height={viewHeight} width={viewWidth} />
-        <rect fill="#020617" height="70" opacity="0.46" width={viewWidth} />
-
-        {Array.from({ length: 40 }, (_, index) => (
-          <rect
-            fill={index % 2 === 0 ? "#1e3a8a" : "#0f172a"}
-            height="4"
-            key={`skyline-${index}`}
-            opacity="0.55"
-            width="8"
-            x={index * 8}
-            y={76 + ((index * 11) % 28)}
-          />
-        ))}
-
-        {stars.map((star, index) => (
-          <rect
-            fill={star.color}
-            height={star.size}
-            key={`star-${index}`}
-            opacity={index / stars.length <= progress ? "0.92" : "0.32"}
-            width={star.size}
-            x={star.x}
-            y={star.y}
-          />
-        ))}
-
-        <rect fill="#0f172a" height="46" width={viewWidth} y="132" />
-        <rect fill="#334155" height="4" width={viewWidth} y="132" />
-        <rect fill="#475569" height="4" width={viewWidth} y="176" />
-
-        {samples.map((peak, index) => {
-          const x = 12 + index * 9.25;
-          const barHeight = Math.max(gridSize, Math.round(peak * 56 / gridSize) * gridSize);
-          const isEncoded = index <= progressColumns;
-          const color = isEncoded ? palette[index % palette.length] : "#64748b";
-
-          return (
-            <g key={`pixel-wave-${index}`}>
-              <rect
-                fill="#020617"
-                height={barHeight + 4}
-                width="7"
-                x={x + 1}
-                y={waveBottom - barHeight + 2}
-              />
-              <rect
-                fill={color}
-                height={barHeight}
-                opacity={isEncoded ? "0.95" : "0.38"}
-                width="7"
-                x={x}
-                y={waveBottom - barHeight}
-              />
-              <rect
-                fill="#f8fafc"
-                height="2"
-                opacity={isEncoded ? "0.42" : "0.12"}
-                width="7"
-                x={x}
-                y={waveBottom - barHeight}
-              />
-            </g>
-          );
-        })}
-
-        {payloadBlocks.map((value, index) => {
-          const x = 10 + (index % 20) * 15;
-          const y = 146 + Math.floor(index / 20) * 9;
-          const isEncoded = index / payloadBlocks.length <= progress;
+        <title>8-bit audio amplitude artifact map</title>
+        <desc>
+          Pixel columns represent time, rows represent normalized amplitude
+          bands, color represents local energy and transients, and opacity
+          follows encode progress.
+        </desc>
+        {cells.map((cell) => {
+          const columnProgress = cell.column / Math.max(1, columns - 1);
+          const isEncoded = columnProgress <= progress;
 
           return (
             <rect
-              fill={isEncoded ? palette[(index + 1) % palette.length] : "#334155"}
-              height={value > 0.52 ? "6" : "3"}
-              key={`payload-block-${index}`}
-              opacity={isEncoded ? "0.92" : "0.42"}
-              width={value > 0.74 ? "10" : "6"}
-              x={x}
-              y={y}
+              fill={cell.fill}
+              height={cellHeight}
+              key={`${cell.column}-${cell.row}`}
+              opacity={isEncoded ? cell.opacity : cell.opacity * 0.36}
+              width={cellWidth}
+              x={cell.column * cellWidth}
+              y={cell.row * cellHeight}
             />
           );
         })}
 
-        <g clipPath="url(#eight-bit-progress-clip)">
-          <rect fill="#67e8f9" height={viewHeight} opacity="0.08" width={viewWidth} />
-          <polyline
-            fill="none"
-            points={samples
-              .map((peak, index) => {
-                const x = 12 + index * 9.25 + 3.5;
-                const y = waveBottom - Math.max(8, peak * 56);
+        {Array.from({ length: columns }, (_, column) => {
+          const sample = sampleSeries(peaks, columns)[column] ?? 0;
+          const yTop = Math.round((center - sample * center) * cellHeight);
+          const yBottom = Math.round((center + sample * center) * cellHeight);
 
-                return `${x.toFixed(1)},${y.toFixed(1)}`;
-              })
-              .join(" ")}
-            stroke="#f8fafc"
-            strokeWidth="2"
-          />
-        </g>
+          return (
+            <line
+              key={`edge-${column}`}
+              opacity={column / Math.max(1, columns - 1) <= progress ? "0.55" : "0.18"}
+              stroke="#e0f2fe"
+              strokeWidth="1"
+              x1={column * cellWidth + cellWidth / 2}
+              x2={column * cellWidth + cellWidth / 2}
+              y1={yTop}
+              y2={yBottom}
+            />
+          );
+        })}
 
-        <rect fill="#facc15" height="72" width="4" x={progressX} y="82" />
-        <rect fill="#020617" height="72" opacity="0.5" width="2" x={progressX + 4} y="82" />
-        <rect fill="#fb7185" height="8" width="14" x={progressX - 5} y="76" />
-        <rect fill="#f8fafc" height="4" width="6" x={progressX - 1} y="78" />
-
-        <rect fill="#020617" height="8" width={viewWidth} y="182" />
-        {Array.from({ length: 40 }, (_, index) => (
-          <rect
-            fill={index % 2 === 0 ? "#38bdf8" : "#facc15"}
-            height="4"
-            key={`floor-${index}`}
-            opacity="0.82"
-            width="4"
-            x={index * 8}
-            y="182"
-          />
-        ))}
+        <rect
+          fill="none"
+          height={viewHeight}
+          stroke="#7dd3fc"
+          strokeOpacity="0.28"
+          strokeWidth="1"
+          width={viewWidth}
+        />
       </svg>
     </div>
   );
+}
+
+function buildEightBitAudioCells(peaks: number[], columns: number, rows: number) {
+  const samples = sampleSeries(peaks, columns);
+  const center = (rows - 1) / 2;
+
+  return samples.flatMap((peak, column) => {
+    const previous = samples[Math.max(0, column - 1)] ?? peak;
+    const next = samples[Math.min(samples.length - 1, column + 1)] ?? peak;
+    const transient = clamp01(Math.abs(peak - previous) + Math.abs(next - peak));
+    const neighborhood = samples.slice(
+      Math.max(0, column - 2),
+      Math.min(samples.length, column + 3),
+    );
+    const localMean =
+      neighborhood.reduce((sum, value) => sum + value, 0) / neighborhood.length;
+    const roughness =
+      neighborhood.reduce((sum, value, index) => {
+        if (index === 0) {
+          return sum;
+        }
+
+        return sum + Math.abs(value - (neighborhood[index - 1] ?? value));
+      }, 0) / Math.max(1, neighborhood.length - 1);
+
+    return Array.from({ length: rows }, (_, row) => {
+      const normalizedDistance = Math.abs(row - center) / center;
+      const insideEnvelope = normalizedDistance <= Math.max(0.04, peak);
+      const edgeDistance = Math.abs(normalizedDistance - peak);
+      const nearEnvelopeEdge = edgeDistance <= 1 / center;
+      const nearCenter = normalizedDistance <= 1 / center;
+      const intensity = clamp01(
+        insideEnvelope
+          ? 0.48 + peak * 0.3 + localMean * 0.14 + transient * 0.28
+          : 0.12 + localMean * 0.18 + (1 - normalizedDistance) * 0.08,
+      );
+      const fill = insideEnvelope
+        ? nearEnvelopeEdge
+          ? "#e0f2fe"
+          : transient > 0.24
+            ? "#facc15"
+            : roughness > 0.11
+              ? "#fb7185"
+              : peak > 0.68
+                ? "#22c55e"
+                : "#38bdf8"
+        : nearCenter
+          ? "#1e293b"
+          : "#06151d";
+
+      return {
+        column,
+        fill,
+        opacity: insideEnvelope ? intensity : Math.max(0.22, intensity),
+        row,
+      };
+    });
+  });
 }
 
 function repeatHelixText(value: string, count: number) {
