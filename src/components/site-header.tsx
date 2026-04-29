@@ -68,7 +68,7 @@ export function SiteHeader() {
                   </li>
                 ))
               : null}
-            <li>
+            <li className={user ? "ml-4" : undefined}>
               <Dropdown label="Menu">
                 {menuItems.map((item) => (
                   <DropdownLink href={item.href} key={item.href}>

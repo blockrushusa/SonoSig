@@ -7,7 +7,7 @@ export default function CreatePage() {
     <main className="flex min-h-dvh flex-1 flex-col bg-[#0e1116] text-zinc-50">
       <SiteHeader />
       <AuthGate>
-        <section className="px-6 py-12 lg:px-16">
+        <section className="flex flex-1 items-center px-6 py-8 lg:px-16">
           <CreateWatermarkStudio />
         </section>
       </AuthGate>

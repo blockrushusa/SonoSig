@@ -48,6 +48,7 @@ const SONOSIG_PALETTE = [
 
 export function InteractiveSonoSigLogo() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const haloRef = useRef<HTMLDivElement | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const settingsRef = useRef<SiteSettings>(DEFAULT_SITE_SETTINGS);
   const motionFieldRef = useRef<MotionField>({ vx: 0, vy: 0 });
@@ -84,6 +85,7 @@ export function InteractiveSonoSigLogo() {
     let width = 0;
     let height = 0;
     let reducedMotion = false;
+    let startTime = performance.now();
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     function resizeCanvas() {
@@ -166,10 +168,21 @@ export function InteractiveSonoSigLogo() {
       const motionField = motionFieldRef.current;
       const logoSettings = settingsRef.current.homeLogo;
       const now = performance.now();
+      const elapsedSeconds = (now - startTime) / 1000;
+      const shadowOpacity =
+        logoSettings.haloFadeEnabled && !reducedMotion
+          ? Math.max(
+              0,
+              1 - elapsedSeconds / logoSettings.haloFadeDurationSeconds,
+            )
+          : 1;
       pointer.hold += pointer.holding ? (1 - pointer.hold) * 0.08 : -pointer.hold * 0.07;
       pointer.hold = Math.max(0, Math.min(1, pointer.hold));
       motionField.vx *= logoSettings.inertia;
       motionField.vy *= logoSettings.inertia;
+      if (haloRef.current) {
+        haloRef.current.style.opacity = String(shadowOpacity);
+      }
       canvasContext.clearRect(0, 0, width, height);
 
       const paletteColor = getPaletteColor(now * 0.004);
@@ -185,17 +198,17 @@ export function InteractiveSonoSigLogo() {
         0,
         logoSettings.strobeOnHold && pointer.hold > 0.02
           ? `rgba(${paletteColor.r}, ${paletteColor.g}, ${paletteColor.b}, ${
-              0.18 + pointer.hold * 0.12
+              (0.18 + pointer.hold * 0.12) * shadowOpacity
             })`
           : `rgba(${Math.round(103 + pointer.hold * 92)}, ${Math.round(
               232 - pointer.hold * 54,
-            )}, 249, ${0.18 + pointer.hold * 0.08})`,
+            )}, 249, ${(0.18 + pointer.hold * 0.08) * shadowOpacity})`,
       );
       gradient.addColorStop(
         0.5,
         `rgba(${Math.round(34 + pointer.hold * 145)}, ${Math.round(
           211 - pointer.hold * 98,
-        )}, 238, ${0.06 + pointer.hold * 0.06})`,
+        )}, 238, ${(0.06 + pointer.hold * 0.06) * shadowOpacity})`,
       );
       gradient.addColorStop(1, "rgba(8,145,178,0)");
       canvasContext.fillStyle = gradient;
@@ -334,6 +347,7 @@ export function InteractiveSonoSigLogo() {
     }
 
     function rebuild() {
+      startTime = performance.now();
       resizeCanvas();
       const image = new Image();
       image.decoding = "async";
@@ -383,7 +397,10 @@ export function InteractiveSonoSigLogo() {
 
   return (
     <div className="relative aspect-square w-[min(72vw,440px)] overflow-visible lg:w-[clamp(340px,28vw,480px)]">
-      <div className="absolute inset-[8%] rounded-full bg-cyan-300/10 blur-3xl" />
+      <div
+        className="absolute inset-[8%] rounded-full bg-cyan-300/10 blur-3xl"
+        ref={haloRef}
+      />
       <canvas
         aria-label="Interactive SonoSig logo"
         className="relative h-full w-full touch-none rounded-full"

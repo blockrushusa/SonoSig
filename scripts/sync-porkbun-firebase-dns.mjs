@@ -12,6 +12,33 @@ const FIREBASE_RECORDS = {
   acmeTxt: "8IHy_r99-B_iQojnuFwPGRon3ZEOM-3fH8-S42GJutw",
 };
 
+const FIREBASE_EMAIL_RECORDS = [
+  {
+    type: "TXT",
+    name: DOMAIN,
+    createName: "",
+    content: "v=spf1 include:_spf.firebasemail.com ~all",
+  },
+  {
+    type: "TXT",
+    name: DOMAIN,
+    createName: "",
+    content: "firebase=sonosig-dotcom",
+  },
+  {
+    type: "CNAME",
+    name: `firebase1._domainkey.${DOMAIN}`,
+    createName: "firebase1._domainkey",
+    content: "mail-sonosig-com.dkim1._domainkey.firebasemail.com.",
+  },
+  {
+    type: "CNAME",
+    name: `firebase2._domainkey.${DOMAIN}`,
+    createName: "firebase2._domainkey",
+    content: "mail-sonosig-com.dkim2._domainkey.firebasemail.com.",
+  },
+];
+
 const STALE_APEX_A = new Set(["44.230.85.241", "52.33.207.7"]);
 
 function loadEnvFile(path) {
@@ -74,11 +101,14 @@ async function getRecords() {
 }
 
 function isRelevant(record) {
+  const emailRecordNames = new Set(FIREBASE_EMAIL_RECORDS.map((item) => item.name));
+
   return (
     ["A", "ALIAS", "TXT", "CNAME", "MX"].includes(record.type) &&
     (record.name === DOMAIN ||
       record.name === `_acme-challenge.${DOMAIN}` ||
-      record.name === `*.${DOMAIN}`)
+      record.name === `*.${DOMAIN}` ||
+      emailRecordNames.has(record.name))
   );
 }
 
@@ -103,14 +133,29 @@ function shouldDelete(record) {
     return true;
   }
 
+  if (
+    record.name === DOMAIN &&
+    record.type === "TXT" &&
+    record.content.startsWith("v=spf1 ") &&
+    record.content !== FIREBASE_EMAIL_RECORDS[0].content
+  ) {
+    return true;
+  }
+
   return false;
 }
 
 function hasRecord(records, type, name, content) {
   return records.some(
     (record) =>
-      record.type === type && record.name === name && record.content === content,
+      record.type === type &&
+      record.name === name &&
+      normalizeDnsContent(record.content) === normalizeDnsContent(content),
   );
+}
+
+function normalizeDnsContent(content) {
+  return String(content).replace(/\.$/, "");
 }
 
 async function sync() {
@@ -176,6 +221,25 @@ async function sync() {
     });
   }
 
+  for (const record of FIREBASE_EMAIL_RECORDS) {
+    if (hasRecord(afterDelete, record.type, record.name, record.content)) {
+      continue;
+    }
+
+    const result = await porkbun(`/dns/create/${DOMAIN}`, {
+      ...(record.createName ? { name: record.createName } : {}),
+      type: record.type,
+      content: record.content,
+      ttl: "600",
+    });
+    created.push({
+      id: result.id,
+      type: record.type,
+      name: record.name,
+      content: record.content,
+    });
+  }
+
   const finalRecords = await getRecords();
 
   printJson({
@@ -211,6 +275,16 @@ async function check() {
       name: `_acme-challenge.${DOMAIN}`,
       content: FIREBASE_RECORDS.acmeTxt,
     });
+  }
+
+  for (const record of FIREBASE_EMAIL_RECORDS) {
+    if (!hasRecord(records, record.type, record.name, record.content)) {
+      missing.push({
+        type: record.type,
+        name: record.name,
+        content: record.content,
+      });
+    }
   }
 
   printJson({ domain: DOMAIN, missing, records: relevant });

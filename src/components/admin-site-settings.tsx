@@ -246,6 +246,19 @@ export function AdminSiteSettings() {
                 }))
               }
             />
+            <ToggleField
+              checked={logo.haloFadeEnabled}
+              label="Fade blue shadow after load"
+              onChange={(checked) =>
+                setSettings((current) => ({
+                  ...current,
+                  homeLogo: {
+                    ...current.homeLogo,
+                    haloFadeEnabled: checked,
+                  },
+                }))
+              }
+            />
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
@@ -289,6 +302,14 @@ export function AdminSiteSettings() {
               step={0.001}
               value={logo.returnForce}
             />
+            <RangeField
+              label="Shadow fade duration"
+              max={60}
+              min={1}
+              onChange={(value) => updateLogoNumber("haloFadeDurationSeconds", value)}
+              step={1}
+              value={logo.haloFadeDurationSeconds}
+            />
           </div>
         </section>
       </div>
@@ -301,6 +322,7 @@ export function AdminSiteSettings() {
       | "initialVelocityX"
       | "initialVelocityY"
       | "inertia"
+      | "haloFadeDurationSeconds"
       | "returnForce",
     value: number,
   ) {

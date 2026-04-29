@@ -1,4 +1,6 @@
 export type HomeLogoSettings = {
+  haloFadeDurationSeconds: number;
+  haloFadeEnabled: boolean;
   initialMotionEnabled: boolean;
   initialScatter: number;
   initialVelocityX: number;
@@ -9,6 +11,8 @@ export type HomeLogoSettings = {
 };
 
 export const DEFAULT_HOME_LOGO_SETTINGS: HomeLogoSettings = {
+  haloFadeDurationSeconds: 10,
+  haloFadeEnabled: true,
   initialMotionEnabled: true,
   initialScatter: 18,
   initialVelocityX: 0.7,
@@ -38,6 +42,16 @@ export function coerceSiteSettings(value: unknown): SiteSettings {
 
   return {
     homeLogo: {
+      haloFadeDurationSeconds: clampNumber(
+        homeLogo.haloFadeDurationSeconds,
+        1,
+        60,
+        DEFAULT_HOME_LOGO_SETTINGS.haloFadeDurationSeconds,
+      ),
+      haloFadeEnabled:
+        typeof homeLogo.haloFadeEnabled === "boolean"
+          ? homeLogo.haloFadeEnabled
+          : DEFAULT_HOME_LOGO_SETTINGS.haloFadeEnabled,
       initialMotionEnabled:
         typeof homeLogo.initialMotionEnabled === "boolean"
           ? homeLogo.initialMotionEnabled

@@ -24,6 +24,24 @@ type UserResponse = {
   user: AdminUser;
 };
 
+async function readJsonResponse<T>(response: Response, fallbackError: string) {
+  const text = await response.text();
+
+  if (!text) {
+    if (!response.ok) {
+      throw new Error(fallbackError);
+    }
+
+    throw new Error("Server returned an empty response.");
+  }
+
+  try {
+    return JSON.parse(text) as T | { error?: string };
+  } catch {
+    throw new Error(fallbackError);
+  }
+}
+
 function getUserLabel(user: AdminUser) {
   return user.email || user.displayName || user.uid;
 }
@@ -63,7 +81,10 @@ export function AdminUserManagement() {
     try {
       const headers = await getAuthorizationHeader();
       const response = await fetch("/api/admin/users", { headers });
-      const payload = (await response.json()) as UsersResponse | { error?: string };
+      const payload = await readJsonResponse<UsersResponse>(
+        response,
+        "Unable to load users.",
+      );
 
       if (!response.ok) {
         throw new Error("error" in payload ? payload.error : "Unable to load users.");
@@ -98,7 +119,10 @@ export function AdminUserManagement() {
         },
         method: "PATCH",
       });
-      const payload = (await response.json()) as UserResponse | { error?: string };
+      const payload = await readJsonResponse<UserResponse>(
+        response,
+        "Unable to update access.",
+      );
 
       if (!response.ok) {
         throw new Error(
@@ -140,9 +164,10 @@ export function AdminUserManagement() {
         const response = await fetch("/api/admin/users", {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const payload = (await response.json()) as
-          | UsersResponse
-          | { error?: string };
+        const payload = await readJsonResponse<UsersResponse>(
+          response,
+          "Unable to load users.",
+        );
 
         if (!response.ok) {
           throw new Error(

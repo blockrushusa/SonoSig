@@ -54,6 +54,7 @@ export function CreateWatermarkStudio() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [status, setStatus] = useState("");
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isEncoding, setIsEncoding] = useState(false);
   const [isEmbedding, setIsEmbedding] = useState(false);
   const [hasVisualizationPreview, setHasVisualizationPreview] = useState(false);
@@ -75,9 +76,26 @@ export function CreateWatermarkStudio() {
   const [songMetadata, setSongMetadata] = useState<SongMetadata>({});
   const didEditEnsRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const outputUrlRef = useRef<string | null>(null);
 
   const canEncode = Boolean(isConnected && address && chainId && sourceFile);
+
+  function handleFileSelection(file: File | null) {
+    void handleSourceFileChange(file);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDraggingFile(false);
+    const file = event.dataTransfer.files?.[0] ?? null;
+
+    if (file?.type.startsWith("audio/")) {
+      handleFileSelection(file);
+    } else if (file) {
+      setStatus("Choose an audio file.");
+    }
+  }
 
   async function handleSourceFileChange(file: File | null) {
     setSourceFile(file);
@@ -297,10 +315,16 @@ export function CreateWatermarkStudio() {
     }
   }
 
+  const hasPreview = hasVisualizationPreview || isEmbedding || Boolean(encodedAudio);
+  const isUploadCompact = Boolean(sourceFile || hasPreview || isEncoding || isPending);
+  const containerClass = hasPreview
+    ? "mx-auto w-full max-w-6xl"
+    : "mx-auto w-full max-w-3xl";
+
   return (
-    <div>
-      <section className="rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30">
-        <div className="flex items-start justify-between gap-5">
+    <div className={containerClass}>
+      <section className="min-h-[26rem] rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30 sm:p-8">
+        <div className="flex items-center justify-between gap-5">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
               Create
@@ -556,19 +580,92 @@ export function CreateWatermarkStudio() {
           </div>
         ) : null}
 
-        <div className="mt-8 grid gap-4">
-          <label className="grid gap-2">
+        <div className="mt-7 grid gap-5">
+          <div
+            className={
+              isDraggingFile
+                ? `${getUploadZoneSizeClass(isUploadCompact)} grid cursor-pointer place-items-center rounded-lg border border-cyan-300 bg-cyan-300/10 text-center transition-all duration-500 ease-out`
+                : `${getUploadZoneSizeClass(isUploadCompact)} grid cursor-pointer place-items-center rounded-lg border border-dashed border-white/15 bg-zinc-950/70 text-center transition-all duration-500 ease-out hover:border-cyan-300/70 hover:bg-cyan-300/[0.06]`
+            }
+            onClick={() => fileInputRef.current?.click()}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setIsDraggingFile(true);
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                return;
+              }
+
+              setIsDraggingFile(false);
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={handleDrop}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+          >
+            <div
+              className={
+                isUploadCompact
+                  ? "grid justify-items-center gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center md:text-left"
+                  : "grid justify-items-center gap-4"
+              }
+            >
+              <div
+                className={
+                  isUploadCompact
+                    ? "grid h-10 w-10 place-items-center rounded-full border border-cyan-300/30 bg-cyan-300/10 transition-all duration-500"
+                    : "grid h-14 w-14 place-items-center rounded-full border border-cyan-300/30 bg-cyan-300/10 transition-all duration-500"
+                }
+              >
+                <span className="text-xl font-semibold text-cyan-200">+</span>
+              </div>
+              <div>
+                <p
+                  className={
+                    isUploadCompact
+                      ? "max-w-full truncate text-base font-semibold text-white"
+                      : "text-lg font-semibold text-white"
+                  }
+                >
+                  {sourceFile ? sourceFile.name : "Drop audio here"}
+                </p>
+                <p className="mt-2 text-sm text-zinc-400">
+                  {sourceFile ? "Click to choose a different file" : "Click to upload or drag a file into this box"}
+                </p>
+              </div>
+              <span className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">
+                Choose File
+              </span>
+            </div>
             <input
+              ref={fileInputRef}
               aria-label="Choose an audio file"
               accept="audio/*"
-              className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950"
+              className="sr-only"
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
-                void handleSourceFileChange(file);
+                handleFileSelection(file);
               }}
               type="file"
             />
-          </label>
+          </div>
+          {!encodedAudio && !hasPreview ? (
+            <button
+              className="mx-auto w-full max-w-48 rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!canEncode || isEncoding || isPending}
+              onClick={handleEncode}
+              type="button"
+            >
+              {isEncoding || isPending ? "Encoding..." : "Continue"}
+            </button>
+          ) : null}
 
           {status ? (
             <p className="text-center text-sm leading-6 text-zinc-400">
@@ -576,7 +673,7 @@ export function CreateWatermarkStudio() {
             </p>
           ) : null}
 
-          {hasVisualizationPreview || isEmbedding || encodedAudio ? (
+          {hasPreview ? (
             <EmbeddingVisualization
               address={embeddingAddress}
               audioUrl={encodedAudio?.url}
@@ -604,16 +701,19 @@ export function CreateWatermarkStudio() {
             />
           ) : null}
 
-          {!encodedAudio ? (
-            <button
-              className="ml-auto w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canEncode || isEncoding || isPending}
-              onClick={handleEncode}
-              type="button"
-            >
-              {isEncoding || isPending ? "Encoding..." : "Continue"}
-            </button>
+          {!encodedAudio && hasPreview ? (
+            <div className="flex justify-end">
+              <button
+                className="w-full rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-40"
+                disabled={!canEncode || isEncoding || isPending}
+                onClick={handleEncode}
+                type="button"
+              >
+                {isEncoding || isPending ? "Encoding..." : "Continue"}
+              </button>
+            </div>
           ) : null}
+
         </div>
 
         {encodedAudio ? (
@@ -696,6 +796,10 @@ export function CreateWatermarkStudio() {
       ) : null}
     </div>
   );
+}
+
+function getUploadZoneSizeClass(isCompact: boolean) {
+  return isCompact ? "min-h-24 p-4" : "min-h-44 p-6";
 }
 
 function EmbeddingVisualization({

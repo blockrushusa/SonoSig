@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { verifyMessage } from "viem";
 import {
   ProofDetailsTabs,
@@ -44,9 +44,32 @@ export function VerifyWatermarkStudio() {
   );
   const [status, setStatus] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [selectedFileName, setSelectedFileName] = useState("");
   const [activeTab, setActiveTab] = useState<ProofDetailsTab>("proof");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  function handleFileSelection(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("audio/") && !isSupportedAudioName(file.name)) {
+      setStatus("Choose an audio file.");
+      return;
+    }
+
+    void handleVerify(file);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDraggingFile(false);
+    handleFileSelection(event.dataTransfer.files?.[0] ?? null);
+  }
 
   async function handleVerify(file: File) {
+    setSelectedFileName(file.name);
     setVerification(null);
     setActiveTab("proof");
     setIsVerifying(true);
@@ -119,79 +142,161 @@ export function VerifyWatermarkStudio() {
     }
   }
 
-  return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30">
-      <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
-        Verify
-      </p>
+  const hasResult = Boolean(verification);
+  const isUploadCompact = Boolean(selectedFileName || isVerifying || hasResult);
+  const containerClass = hasResult
+    ? "mx-auto w-full max-w-5xl"
+    : "mx-auto w-full max-w-3xl";
 
-      <div className="mt-8 grid gap-4">
-        <label>
-          <input
-            aria-label="Upload watermarked audio file"
-            accept="audio/wav,audio/aiff,audio/mp4,audio/ogg,.wav,.aif,.aiff,.m4a,.oga,.ogg,.opus"
-            className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-300 file:mr-4 file:rounded-md file:border-0 file:bg-cyan-300 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-zinc-950"
-            disabled={isVerifying}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) {
-                void handleVerify(file);
+  return (
+    <div className={containerClass}>
+      <section className="min-h-[26rem] rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30 sm:p-8">
+        <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
+          Verify
+        </p>
+
+        <div className="mt-7 grid gap-5">
+          <div
+            className={
+              isDraggingFile
+                ? `${getVerifyUploadZoneSizeClass(isUploadCompact)} grid cursor-pointer place-items-center rounded-lg border border-cyan-300 bg-cyan-300/10 text-center transition-all duration-500 ease-out`
+                : `${getVerifyUploadZoneSizeClass(isUploadCompact)} grid cursor-pointer place-items-center rounded-lg border border-dashed border-white/15 bg-zinc-950/70 text-center transition-all duration-500 ease-out hover:border-cyan-300/70 hover:bg-cyan-300/[0.06]`
+            }
+            onClick={() => fileInputRef.current?.click()}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setIsDraggingFile(true);
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                return;
+              }
+
+              setIsDraggingFile(false);
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={handleDrop}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                fileInputRef.current?.click();
               }
             }}
-            type="file"
-          />
-        </label>
-
-        <p className="text-sm leading-6 text-zinc-400">{status}</p>
-      </div>
-
-      {verification ? (
-        <div className="mt-8 rounded-lg border border-white/10 bg-zinc-950 p-5">
-          {verification.status === "valid" ? (
-            <div className="inline-flex items-center gap-3 rounded-md border border-cyan-300/30 bg-cyan-300/10 px-4 py-3 text-cyan-100">
-              <span
-                aria-hidden="true"
-                className="grid h-8 w-8 place-items-center rounded-full bg-cyan-300 text-base font-black text-zinc-950"
+            role="button"
+            tabIndex={0}
+          >
+            <div
+              className={
+                isUploadCompact
+                  ? "grid justify-items-center gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center md:text-left"
+                  : "grid justify-items-center gap-4"
+              }
+            >
+              <div
+                className={
+                  isUploadCompact
+                    ? "grid h-10 w-10 place-items-center rounded-full border border-cyan-300/30 bg-cyan-300/10 transition-all duration-500"
+                    : "grid h-14 w-14 place-items-center rounded-full border border-cyan-300/30 bg-cyan-300/10 transition-all duration-500"
+                }
               >
-                ✓
-              </span>
+                <span className="text-xl font-semibold text-cyan-200">+</span>
+              </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
-                  Verified
+                <p
+                  className={
+                    isUploadCompact
+                      ? "max-w-full truncate text-base font-semibold text-white"
+                      : "text-lg font-semibold text-white"
+                  }
+                >
+                  {selectedFileName || "Drop watermarked audio here"}
                 </p>
-                <p className="mt-1 text-sm text-zinc-300">
-                  {verification.audioHashStatus === "verified"
-                    ? "Audio hash and wallet signature match this file."
-                    : "Wallet signature matches this embedded SonoSig proof."}
+                <p className="mt-2 text-sm text-zinc-400">
+                  {selectedFileName
+                    ? "Click to choose a different file"
+                    : "Click to upload or drag a file into this box"}
                 </p>
               </div>
+              <span className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">
+                Choose File
+              </span>
             </div>
-          ) : (
-            <p className="font-semibold text-red-300">Invalid watermark</p>
-          )}
-          {verification.status === "invalid" ? (
-            <p className="mt-2 text-sm leading-6 text-zinc-400">
-              {verification.reason}
+            <input
+              ref={fileInputRef}
+              aria-label="Upload watermarked audio file"
+              accept="audio/wav,audio/aiff,audio/mp4,audio/ogg,.wav,.aif,.aiff,.m4a,.oga,.ogg,.opus"
+              className="sr-only"
+              disabled={isVerifying}
+              onChange={(event) => {
+                handleFileSelection(event.target.files?.[0] ?? null);
+              }}
+              type="file"
+            />
+          </div>
+
+          {status && verification?.status !== "valid" ? (
+            <p className="text-center text-sm leading-6 text-zinc-400">
+              {status}
             </p>
-          ) : (
-            <details className="mt-5 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3">
-              <summary className="cursor-pointer text-sm font-semibold text-zinc-200">
-                Proof info
-              </summary>
-              <ProofDetailsTabs
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                payload={verification.payload}
-                profile={verification.profile}
-                audioHashStatus={verification.audioHashStatus}
-                audioHashStatusReason={verification.audioHashStatusReason}
-              />
-            </details>
-          )}
+          ) : null}
         </div>
-      ) : null}
-    </section>
+
+        {verification ? (
+          <div className="mt-8 rounded-lg bg-[#071014] p-5">
+            {verification.status === "valid" ? (
+              <div className="mx-auto flex w-fit max-w-full items-center gap-3 rounded-md border border-cyan-300/30 bg-cyan-300/10 px-4 py-3 text-left text-cyan-100">
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 place-items-center rounded-full bg-cyan-300 text-base font-black text-zinc-950"
+                >
+                  ✓
+                </span>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+                    Verified
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-300">
+                    {verification.audioHashStatus === "verified"
+                      ? "Audio hash and wallet signature match this file."
+                      : "Wallet signature matches this embedded SonoSig proof."}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="font-semibold text-red-300">Invalid watermark</p>
+            )}
+            {verification.status === "invalid" ? (
+              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                {verification.reason}
+              </p>
+            ) : (
+              <details className="mt-5 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3">
+                <summary className="cursor-pointer text-sm font-semibold text-zinc-200">
+                  Proof info
+                </summary>
+                <ProofDetailsTabs
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                  payload={verification.payload}
+                  profile={verification.profile}
+                  audioHashStatus={verification.audioHashStatus}
+                  audioHashStatusReason={verification.audioHashStatusReason}
+                />
+              </details>
+            )}
+          </div>
+        ) : null}
+      </section>
+    </div>
   );
+}
+
+function getVerifyUploadZoneSizeClass(isCompact: boolean) {
+  return isCompact ? "min-h-24 p-4" : "min-h-44 p-6";
+}
+
+function isSupportedAudioName(name: string) {
+  return /\.(aif|aiff|m4a|oga|ogg|opus|wav)$/i.test(name);
 }
 
 function audioProofHashesMatch(
