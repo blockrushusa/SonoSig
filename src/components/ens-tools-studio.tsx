@@ -12,6 +12,7 @@ import { namehash } from "viem/ens";
 import { useAccount, useChainId, useSwitchChain, useWalletClient } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { useEffect, useMemo, useState } from "react";
+import { trackEvent } from "@/lib/analytics";
 
 const ENS_RECORD_KEYS = [
   { key: "com.sonosig", label: "SonoSig" },
@@ -158,6 +159,10 @@ export function EnsToolsStudio() {
         const names = body.names ?? [];
         setEnsNames(names);
         setSelectedName(names[0] ?? "");
+        trackEvent("ens_names_loaded", {
+          count: names.length,
+          wallet_connected: true,
+        });
         setStatus(
           names.length
             ? `Found ${names.length} ENS name${names.length === 1 ? "" : "s"}.`
@@ -171,6 +176,10 @@ export function EnsToolsStudio() {
 
         setEnsNames([]);
         setSelectedName("");
+        trackEvent("ens_names_load_failed", {
+          reason:
+            error instanceof Error ? error.message : "Unable to load ENS names.",
+        });
         setStatus(
           error instanceof Error ? error.message : "Unable to load ENS names.",
         );
@@ -189,22 +198,26 @@ export function EnsToolsStudio() {
   async function handleScan() {
     if (!isConnected || !address) {
       setStatus("Connect a wallet first.");
+      trackEvent("ens_scan_blocked", { reason: "wallet_not_connected" });
       return;
     }
 
     if (!activeName) {
       setStatus("Choose or enter an ENS name to scan.");
+      trackEvent("ens_scan_blocked", { reason: "missing_ens_name" });
       return;
     }
 
     if (!walletClient) {
       setStatus("Wallet is not ready. Reconnect your wallet and try again.");
+      trackEvent("ens_scan_blocked", { reason: "wallet_client_unavailable" });
       return;
     }
 
     setIsScanning(true);
     setScan(null);
     setStatus("Resolving ENS name...");
+    trackEvent("ens_scan_start");
 
     try {
       if (chainId !== mainnet.id) {
@@ -222,7 +235,15 @@ export function EnsToolsStudio() {
 
       setScan(nextScan);
       setStatus(`Scan complete for ${activeName}.`);
+      trackEvent("ens_scan_success", {
+        has_resolver: Boolean(nextScan.resolver),
+        record_count: nextScan.textRecords.length,
+      });
     } catch (error) {
+      trackEvent("ens_scan_failed", {
+        reason:
+          error instanceof Error ? error.message : "Unable to scan ENS records.",
+      });
       setStatus(
         error instanceof Error ? error.message : "Unable to scan ENS records.",
       );

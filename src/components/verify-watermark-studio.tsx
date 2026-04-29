@@ -7,6 +7,7 @@ import {
   type AudioProfile,
   type ProofDetailsTab,
 } from "@/components/proof-details-tabs";
+import { trackEvent } from "@/lib/analytics";
 import {
   buildSiweMessage,
   createWatermarkedAudioProofHashes,
@@ -56,6 +57,9 @@ export function VerifyWatermarkStudio() {
 
     if (!file.type.startsWith("audio/") && !isSupportedAudioName(file.name)) {
       setStatus("Choose an audio file.");
+      trackEvent("verify_file_rejected", {
+        file_type: file.type || "unknown",
+      });
       return;
     }
 
@@ -74,6 +78,10 @@ export function VerifyWatermarkStudio() {
     setActiveTab("proof");
     setIsVerifying(true);
     setStatus("Reading watermark locally...");
+    trackEvent("verify_start", {
+      file_type: file.type || "unknown",
+      size_bytes: file.size,
+    });
 
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -93,6 +101,7 @@ export function VerifyWatermarkStudio() {
             profile,
           });
           setStatus("Audio fingerprint failed.");
+          trackEvent("verify_failed", { reason: "audio_fingerprint_mismatch" });
           return;
         }
       } catch {
@@ -115,6 +124,7 @@ export function VerifyWatermarkStudio() {
           profile,
         });
         setStatus("Watermark signature failed.");
+        trackEvent("verify_failed", { reason: "signature_invalid" });
         return;
       }
 
@@ -130,6 +140,10 @@ export function VerifyWatermarkStudio() {
           ? "Watermark verified."
           : "Watermark signature verified.",
       );
+      trackEvent("verify_success", {
+        audio_hash_status: audioHashStatus,
+        has_song_metadata: Boolean(payload.song),
+      });
     } catch (error) {
       setVerification({
         status: "invalid",
@@ -137,6 +151,9 @@ export function VerifyWatermarkStudio() {
           error instanceof Error ? error.message : "Unable to verify watermark.",
       });
       setStatus("No valid watermark found.");
+      trackEvent("verify_failed", {
+        reason: error instanceof Error ? error.message : "no_valid_watermark",
+      });
     } finally {
       setIsVerifying(false);
     }
@@ -270,7 +287,14 @@ export function VerifyWatermarkStudio() {
                 {verification.reason}
               </p>
             ) : (
-              <details className="mt-5 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3">
+              <details
+                className="mt-5 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3"
+                onToggle={(event) => {
+                  if (event.currentTarget.open) {
+                    trackEvent("verify_proof_info_expand");
+                  }
+                }}
+              >
                 <summary className="cursor-pointer text-sm font-semibold text-zinc-200">
                   Proof info
                 </summary>

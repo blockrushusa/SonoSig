@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { HeaderAuth } from "@/components/header-auth";
 import { WalletConnect } from "@/components/wallet-connect";
+import { trackEvent } from "@/lib/analytics";
 import { useAdminAccess } from "@/lib/firebase/use-admin-access";
 import { useAuthUser } from "@/lib/firebase/use-auth-user";
 
@@ -14,6 +15,7 @@ const navItems = [
 
 const publicMenuItems = [
   { href: "/about", label: "About" },
+  { href: "/docs", label: "Docs" },
   { href: "/faq", label: "FAQ" },
   { href: "/help", label: "Help" },
   { href: "/contact", label: "Contact" },
@@ -68,7 +70,7 @@ export function SiteHeader() {
                   </li>
                 ))
               : null}
-            <li className={user ? "ml-4" : undefined}>
+            <li className={user ? "ml-8" : undefined}>
               <Dropdown label="Menu">
                 {menuItems.map((item) => (
                   <DropdownLink href={item.href} key={item.href}>
@@ -119,6 +121,7 @@ function NavLink({
     <Link
       className="rounded-md px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white"
       href={href}
+      onClick={() => trackEvent("nav_click", { href, label: String(children) })}
     >
       {children}
     </Link>
@@ -184,6 +187,7 @@ function DropdownLink({
     <Link
       className="rounded-md px-3 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white"
       href={href}
+      onClick={() => trackEvent("nav_click", { href, label: String(children) })}
     >
       {children}
     </Link>

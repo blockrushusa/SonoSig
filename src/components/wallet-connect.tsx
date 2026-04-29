@@ -3,6 +3,7 @@
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useEffect, useMemo, useState } from "react";
 import { useDisconnect } from "wagmi";
+import { trackEvent } from "@/lib/analytics";
 
 type EnsNamesResponse = {
   names?: string[];
@@ -121,7 +122,10 @@ function WalletConnectControls({
     return (
       <button
         className="rounded-md border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-zinc-100 transition hover:border-cyan-300/70 hover:text-white"
-        onClick={onConnectClick}
+        onClick={() => {
+          trackEvent("wallet_connect_open", { location: "header" });
+          onConnectClick();
+        }}
         type="button"
       >
         Connect wallet
@@ -133,7 +137,10 @@ function WalletConnectControls({
     return (
       <button
         className="rounded-md border border-red-300/30 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-200"
-        onClick={onChainClick}
+        onClick={() => {
+          trackEvent("wallet_chain_modal_open", { unsupported: true });
+          onChainClick();
+        }}
         type="button"
       >
         Wrong network
@@ -145,7 +152,13 @@ function WalletConnectControls({
     <div className="flex flex-wrap items-center gap-2">
       <button
         className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-zinc-100 transition hover:border-cyan-300/70 hover:text-white"
-        onClick={onChainClick}
+        onClick={() => {
+          trackEvent("wallet_chain_modal_open", {
+            chain_name: chain.name,
+            unsupported: false,
+          });
+          onChainClick();
+        }}
         type="button"
       >
         {chain.hasIcon ? (
@@ -165,7 +178,12 @@ function WalletConnectControls({
       </button>
       <button
         className="inline-flex max-w-56 items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-zinc-100 transition hover:border-cyan-300/70 hover:text-white"
-        onClick={() => setIsAccountOpen(true)}
+        onClick={() => {
+          trackEvent("wallet_account_modal_open", {
+            ens_present: Boolean(ensName),
+          });
+          setIsAccountOpen(true);
+        }}
         title={account.address}
         type="button"
       >
@@ -189,10 +207,12 @@ function WalletConnectControls({
           onCopy={() => {
             void navigator.clipboard.writeText(account.address);
             setCopyStatus("Copied");
+            trackEvent("wallet_address_copy");
             window.setTimeout(() => setCopyStatus(""), 1400);
           }}
           onDisconnect={() => {
             disconnect();
+            trackEvent("wallet_disconnect", { location: "account_modal" });
             setIsAccountOpen(false);
           }}
         />

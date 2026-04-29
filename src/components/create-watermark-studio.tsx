@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount, usePublicClient, useSignMessage } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { readAudioMetadata } from "@/lib/audio-metadata";
+import { trackEvent } from "@/lib/analytics";
 import {
   OUTPUT_FORMATS,
   buildSiweMessage,
@@ -116,6 +117,12 @@ export function CreateWatermarkStudio() {
       return;
     }
 
+    trackEvent("audio_file_selected", {
+      file_type: file.type || "unknown",
+      output_format: supportedFormat,
+      size_bytes: file.size,
+    });
+
     if (inferredFormat !== supportedFormat) {
       setStatus(
         `${getOutputFormat(inferredFormat).label} export is not supported in this browser. Using ${getOutputFormat(supportedFormat).label}.`,
@@ -206,6 +213,10 @@ export function CreateWatermarkStudio() {
   async function handleEncode() {
     if (!sourceFile || !address || !chainId) {
       setStatus("Connect a wallet and select an audio file first.");
+      trackEvent("audio_encode_blocked", {
+        has_file: Boolean(sourceFile),
+        wallet_connected: Boolean(address),
+      });
       return;
     }
 
@@ -213,11 +224,20 @@ export function CreateWatermarkStudio() {
       setStatus(
         `${getOutputFormat(outputFormat).label} export is not supported in this browser. Choose WAV or AIFF.`,
       );
+      trackEvent("audio_encode_blocked", {
+        output_format: outputFormat,
+        reason: "unsupported_format",
+      });
       return;
     }
 
     setIsEncoding(true);
     setStatus("Decoding audio locally...");
+    trackEvent("audio_encode_start", {
+      output_format: outputFormat,
+      song_metadata_present: Boolean(cleanSongMetadata(songMetadata)),
+      wallet_connected: Boolean(address),
+    });
 
     try {
       const audioBuffer = await decodeAudioFile(sourceFile);
@@ -292,8 +312,16 @@ export function CreateWatermarkStudio() {
         fileName: createOutputName(sourceFile.name, outputFormat),
         format: outputFormat,
       });
+      trackEvent("audio_encode_success", {
+        output_format: outputFormat,
+        payload_bytes: payloadBytes.length,
+      });
       setStatus("");
     } catch (error) {
+      trackEvent("audio_encode_failed", {
+        output_format: outputFormat,
+        reason: error instanceof Error ? error.message : "unknown",
+      });
       setStatus(error instanceof Error ? error.message : "Encoding failed.");
     } finally {
       setIsEmbedding(false);
@@ -310,8 +338,10 @@ export function CreateWatermarkStudio() {
 
     if (audio.paused) {
       await audio.play();
+      trackEvent("encoded_audio_play");
     } else {
       audio.pause();
+      trackEvent("encoded_audio_pause");
     }
   }
 
@@ -735,6 +765,11 @@ export function CreateWatermarkStudio() {
                 className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200"
                 download={encodedAudio.fileName}
                 href={encodedAudio.url}
+                onClick={() =>
+                  trackEvent("encoded_audio_download", {
+                    output_format: encodedAudio.format,
+                  })
+                }
               >
                 Download
               </a>
@@ -879,7 +914,10 @@ function EmbeddingVisualization({
                   : "rounded px-3 py-1.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
               }
               key={mode.value}
-              onClick={() => onVisualizationModeChange(mode.value)}
+              onClick={() => {
+                trackEvent("visualization_mode_select", { mode: mode.value });
+                onVisualizationModeChange(mode.value);
+              }}
               type="button"
             >
               {mode.label}

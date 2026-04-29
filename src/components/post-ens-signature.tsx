@@ -16,6 +16,7 @@ import {
   ProofDetailsTabs,
   type ProofDetailsTab,
 } from "@/components/proof-details-tabs";
+import { trackEvent } from "@/lib/analytics";
 import type { ProofPayload } from "@/lib/audio-watermark";
 
 const ENS_TEXT_ABI = [
@@ -217,24 +218,28 @@ export function PostEnsSignature() {
     if (!isConnected || !address) {
       logEnsPost("blocked: wallet not connected");
       setStatus("Connect a wallet first.");
+      trackEvent("ens_post_blocked", { reason: "wallet_not_connected" });
       return;
     }
 
     if (!normalizedName) {
       logEnsPost("blocked: invalid ENS name", { ensName });
       setStatus("Enter a valid ENS name.");
+      trackEvent("ens_post_blocked", { reason: "invalid_ens_name" });
       return;
     }
 
     if (!pacstacRegistration?.claimId || !ensRecordValue) {
       logEnsPost("blocked: missing PacStac registration", { normalizedName });
       setStatus("Register this SonoSig claim with PacStac before publishing to ENS.");
+      trackEvent("ens_post_blocked", { reason: "missing_pacstac_claim" });
       return;
     }
 
     if (!walletClient) {
       logEnsPost("blocked: wallet client unavailable", { normalizedName });
       setStatus("Wallet is not ready. Reconnect your wallet and try again.");
+      trackEvent("ens_post_blocked", { reason: "wallet_client_unavailable" });
       return;
     }
 
@@ -246,6 +251,9 @@ export function PostEnsSignature() {
         claimId: pacstacRegistration.claimId,
         ensName: normalizedName,
         recordKey: SONOSIG_ENS_RECORD_KEY,
+      });
+      trackEvent("ens_post_start", {
+        has_claim_id: Boolean(pacstacRegistration.claimId),
       });
       setStatus("Resolving ENS resolver...");
 
@@ -267,6 +275,7 @@ export function PostEnsSignature() {
         logEnsPost("blocked: no resolver", { ensName: normalizedName });
         setEnsPostPhase("idle");
         setStatus("This ENS name has no resolver configured.");
+        trackEvent("ens_post_blocked", { reason: "no_resolver" });
         return;
       }
 
@@ -291,6 +300,9 @@ export function PostEnsSignature() {
         ensName: normalizedName,
         transactionHash,
       });
+      trackEvent("ens_post_submitted", {
+        record_key: SONOSIG_ENS_RECORD_KEY,
+      });
       setEnsPostPhase("submitted");
       setHash(transactionHash);
     } catch (error) {
@@ -301,6 +313,7 @@ export function PostEnsSignature() {
       });
       setEnsPostPhase("idle");
       setStatus(message);
+      trackEvent("ens_post_failed", { reason: message });
     } finally {
       setIsEnsPosting(false);
     }
@@ -320,17 +333,22 @@ export function PostEnsSignature() {
     }
 
     logEnsPost("confirmed", { transactionHash: hash });
+    trackEvent("ens_post_confirmed");
   }, [hash, isSuccess]);
 
   async function handleRegisterPacStac() {
     if (!lastProof) {
       setStatus("Create a signed SonoSig proof first.");
+      trackEvent("pacstac_register_blocked", { reason: "missing_proof" });
       return;
     }
 
     setIsPacstacPosting(true);
     setPacstacRegistration(null);
     setStatus("Registering signed claim with PacStac...");
+    trackEvent("pacstac_register_start", {
+      has_song_metadata: Boolean(lastProof.song),
+    });
 
     try {
       const response = await fetch("/api/pacstac/sonosig/claims", {
@@ -356,6 +374,10 @@ export function PostEnsSignature() {
       setPacstacRegistration(responseBody as PacStacRegistration);
       const registration = responseBody as PacStacRegistration;
       storePacStacRegistration(lastProof, registration);
+      trackEvent("pacstac_register_success", {
+        idempotent: Boolean(registration.idempotent),
+        status: registration.status,
+      });
       const claimLabel = registration.claimId
         ? ` Claim ID: ${registration.claimId}`
         : "";
@@ -366,6 +388,12 @@ export function PostEnsSignature() {
           : `This SonoSig claim is now registered and indexed by PacStac.${claimLabel} Visit PacStac.com to add your claim to your account.`,
       );
     } catch (error) {
+      trackEvent("pacstac_register_failed", {
+        reason:
+          error instanceof Error
+            ? error.message
+            : "Unable to register PacStac claim.",
+      });
       setStatus(
         error instanceof Error
           ? error.message
@@ -411,7 +439,10 @@ export function PostEnsSignature() {
                   : "rounded px-3 py-1.5 text-sm font-semibold text-zinc-400 transition hover:bg-white/10 hover:text-white"
               }
               key={target}
-              onClick={() => setPostTarget(target)}
+              onClick={() => {
+                trackEvent("post_target_select", { target });
+                setPostTarget(target);
+              }}
               type="button"
             >
               {target === "ens" ? "ENS" : "PacStac"}
