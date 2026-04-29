@@ -147,32 +147,46 @@ export function VerifyWatermarkStudio() {
 
       {verification ? (
         <div className="mt-8 rounded-lg border border-white/10 bg-zinc-950 p-5">
-          <p
-            className={
-              verification.status === "valid"
-                ? "font-semibold text-cyan-200"
-                : "font-semibold text-red-300"
-            }
-          >
-            {verification.status === "valid"
-              ? verification.audioHashStatus === "verified"
-                ? "Valid watermark"
-                : "Valid signature"
-              : "Invalid watermark"}
-          </p>
+          {verification.status === "valid" ? (
+            <div className="inline-flex items-center gap-3 rounded-md border border-cyan-300/30 bg-cyan-300/10 px-4 py-3 text-cyan-100">
+              <span
+                aria-hidden="true"
+                className="grid h-8 w-8 place-items-center rounded-full bg-cyan-300 text-base font-black text-zinc-950"
+              >
+                ✓
+              </span>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+                  Verified
+                </p>
+                <p className="mt-1 text-sm text-zinc-300">
+                  {verification.audioHashStatus === "verified"
+                    ? "Audio hash and wallet signature match this file."
+                    : "Wallet signature matches this embedded SonoSig proof."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="font-semibold text-red-300">Invalid watermark</p>
+          )}
           {verification.status === "invalid" ? (
             <p className="mt-2 text-sm leading-6 text-zinc-400">
               {verification.reason}
             </p>
           ) : (
-            <ProofDetailsTabs
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              payload={verification.payload}
-              profile={verification.profile}
-              audioHashStatus={verification.audioHashStatus}
-              audioHashStatusReason={verification.audioHashStatusReason}
-            />
+            <details className="mt-5 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-zinc-200">
+                Proof info
+              </summary>
+              <ProofDetailsTabs
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                payload={verification.payload}
+                profile={verification.profile}
+                audioHashStatus={verification.audioHashStatus}
+                audioHashStatusReason={verification.audioHashStatusReason}
+              />
+            </details>
           )}
         </div>
       ) : null}

@@ -7,10 +7,11 @@ import {
   usePublicClient,
   useSwitchChain,
   useWaitForTransactionReceipt,
-  useWriteContract,
+  useWalletClient,
 } from "wagmi";
 import { mainnet } from "wagmi/chains";
-import { useMemo, useState } from "react";
+import { isAddress, type Address, type Hash } from "viem";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ProofDetailsTabs,
   type ProofDetailsTab,
@@ -32,6 +33,9 @@ const ENS_TEXT_ABI = [
 ] as const;
 
 type PostTarget = "ens" | "pacstac";
+type EnsPostPhase = "confirming-wallet" | "idle" | "resolving" | "submitted";
+
+const SONOSIG_ENS_RECORD_KEY = "com.sonosig";
 
 type PacStacRegistration = {
   attestation?: {
@@ -50,24 +54,34 @@ type PacStacRegistration = {
   wallet?: string;
 };
 
+type EnsResolverClient = {
+  getEnsResolver: (parameters: { name: string }) => Promise<Address | null>;
+};
+
 export function PostEnsSignature() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId: mainnet.id });
   const { switchChainAsync } = useSwitchChain();
-  const { data: hash, isPending, writeContractAsync } = useWriteContract();
+  const { data: walletClient } = useWalletClient();
+  const [hash, setHash] = useState<Hash | undefined>();
+  const [isEnsPosting, setIsEnsPosting] = useState(false);
+  const [ensPostPhase, setEnsPostPhase] = useState<EnsPostPhase>("idle");
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
   const [lastProof] = useState<ProofPayload | null>(() => getStoredProof());
   const [postTarget, setPostTarget] = useState<PostTarget>("ens");
   const [ensName, setEnsName] = useState("");
-  const [recordKey, setRecordKey] = useState("com.sonosig.signature");
-  const [signature, setSignature] = useState(lastProof?.signature ?? "");
+  const [ensOptions, setEnsOptions] = useState<string[]>([]);
+  const [isEnsLoading, setIsEnsLoading] = useState(false);
   const [pacstacRegistration, setPacstacRegistration] =
-    useState<PacStacRegistration | null>(null);
+    useState<PacStacRegistration | null>(() =>
+      getStoredPacStacRegistration(lastProof),
+    );
   const [isPacstacPosting, setIsPacstacPosting] = useState(false);
   const [status, setStatus] = useState("");
+  const didEditEnsRef = useRef(false);
 
   const normalizedName = useMemo(() => {
     try {
@@ -83,55 +97,230 @@ export function PostEnsSignature() {
       ? "Transaction submitted. Waiting for confirmation..."
       : status;
 
+  const ensRecordValue = pacstacRegistration?.claimId
+    ? JSON.stringify({
+        v: 1,
+        latest: pacstacRegistration.claimId,
+      })
+    : "";
+  const isEnsProgressModalOpen =
+    (isEnsPosting || isConfirming || ensPostPhase !== "idle") && !isSuccess;
+
+  useEffect(() => {
+    didEditEnsRef.current = false;
+
+    let isActive = true;
+
+    if (!address || !publicClient) {
+      queueMicrotask(() => {
+        if (!isActive) {
+          return;
+        }
+
+        setEnsOptions([]);
+        setEnsName("");
+        setIsEnsLoading(false);
+      });
+
+      return () => {
+        isActive = false;
+      };
+    }
+
+    queueMicrotask(() => {
+      if (!isActive) {
+        return;
+      }
+
+      setEnsOptions([]);
+      setIsEnsLoading(true);
+    });
+
+    const ensClient = publicClient;
+    const walletAddress = address;
+
+    async function loadEnsOptions() {
+      const options: string[] = [];
+
+      try {
+        const response = await fetch(`/api/ens/names?address=${walletAddress}`);
+
+        if (response.ok) {
+          const body = (await response.json()) as { names?: string[] };
+
+          for (const name of body.names ?? []) {
+            addEnsOption(options, name);
+          }
+        }
+      } catch {
+        // Indexed ENS ownership lookup is best-effort.
+      }
+
+      try {
+        const reverseName = await ensClient.getEnsName({
+          address: walletAddress,
+        });
+        addEnsOption(options, reverseName);
+      } catch {
+        // Reverse ENS lookup is best-effort.
+      }
+
+      const proofEns = lastProof?.ens?.trim();
+
+      if (proofEns) {
+        try {
+          const normalizedProofEns = normalize(proofEns);
+          const proofEnsAddress = await ensClient.getEnsAddress({
+            name: normalizedProofEns,
+          });
+
+          if (
+            proofEnsAddress &&
+            proofEnsAddress.toLowerCase() === walletAddress.toLowerCase()
+          ) {
+            addEnsOption(options, normalizedProofEns);
+          }
+        } catch {
+          // Ignore invalid or unresolved proof ENS names.
+        }
+      }
+
+      if (!isActive) {
+        return;
+      }
+
+      setEnsOptions(options);
+
+      if (!didEditEnsRef.current) {
+        setEnsName(options[0] ?? "");
+      }
+    }
+
+    loadEnsOptions()
+      .catch(() => {
+        if (isActive) {
+          setEnsOptions([]);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsEnsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [address, lastProof?.ens, publicClient]);
+
   async function handlePost() {
     if (!isConnected || !address) {
+      logEnsPost("blocked: wallet not connected");
       setStatus("Connect a wallet first.");
       return;
     }
 
     if (!normalizedName) {
+      logEnsPost("blocked: invalid ENS name", { ensName });
       setStatus("Enter a valid ENS name.");
       return;
     }
 
-    if (!signature.trim()) {
-      setStatus("Add a signature to post.");
+    if (!pacstacRegistration?.claimId || !ensRecordValue) {
+      logEnsPost("blocked: missing PacStac registration", { normalizedName });
+      setStatus("Register this SonoSig claim with PacStac before publishing to ENS.");
       return;
     }
 
-    if (!publicClient) {
-      setStatus("ENS lookup is unavailable.");
+    if (!walletClient) {
+      logEnsPost("blocked: wallet client unavailable", { normalizedName });
+      setStatus("Wallet is not ready. Reconnect your wallet and try again.");
       return;
     }
 
     try {
+      setIsEnsPosting(true);
+      setHash(undefined);
+      setEnsPostPhase("resolving");
+      logEnsPost("start", {
+        claimId: pacstacRegistration.claimId,
+        ensName: normalizedName,
+        recordKey: SONOSIG_ENS_RECORD_KEY,
+      });
       setStatus("Resolving ENS resolver...");
 
       if (chainId !== mainnet.id) {
+        logEnsPost("switching chain", {
+          currentChainId: chainId,
+          targetChainId: mainnet.id,
+        });
         await switchChainAsync({ chainId: mainnet.id });
       }
 
-      const resolver = await publicClient.getEnsResolver({
-        name: normalizedName,
+      const resolver = await getEnsResolverAddress(normalizedName, publicClient);
+      logEnsPost("resolver resolved", {
+        ensName: normalizedName,
+        resolver,
       });
 
       if (!resolver) {
+        logEnsPost("blocked: no resolver", { ensName: normalizedName });
+        setEnsPostPhase("idle");
         setStatus("This ENS name has no resolver configured.");
         return;
       }
 
+      setEnsPostPhase("confirming-wallet");
+      logEnsPost("wallet confirmation requested", {
+        ensName: normalizedName,
+        resolver,
+      });
       setStatus("Confirm the ENS text record update in your wallet.");
-      await writeContractAsync({
+      const transactionHash = await walletClient.writeContract({
         abi: ENS_TEXT_ABI,
         address: resolver,
-        args: [namehash(normalizedName), recordKey.trim(), signature.trim()],
-        chainId: mainnet.id,
+        args: [
+          namehash(normalizedName),
+          SONOSIG_ENS_RECORD_KEY,
+          ensRecordValue,
+        ],
+        chain: mainnet,
         functionName: "setText",
       });
+      logEnsPost("transaction submitted", {
+        ensName: normalizedName,
+        transactionHash,
+      });
+      setEnsPostPhase("submitted");
+      setHash(transactionHash);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to post record.");
+      const message = formatEnsPostError(error);
+      logEnsPost("error", {
+        error,
+        message,
+      });
+      setEnsPostPhase("idle");
+      setStatus(message);
+    } finally {
+      setIsEnsPosting(false);
     }
   }
+
+  useEffect(() => {
+    if (!hash) {
+      return;
+    }
+
+    logEnsPost("waiting for confirmation", { transactionHash: hash });
+  }, [hash]);
+
+  useEffect(() => {
+    if (!isSuccess || !hash) {
+      return;
+    }
+
+    logEnsPost("confirmed", { transactionHash: hash });
+  }, [hash, isSuccess]);
 
   async function handleRegisterPacStac() {
     if (!lastProof) {
@@ -166,14 +355,15 @@ export function PostEnsSignature() {
 
       setPacstacRegistration(responseBody as PacStacRegistration);
       const registration = responseBody as PacStacRegistration;
+      storePacStacRegistration(lastProof, registration);
       const claimLabel = registration.claimId
         ? ` Claim ID: ${registration.claimId}`
         : "";
 
       setStatus(
         registration.idempotent
-          ? `This SonoSig claim was already registered with PacStac.${claimLabel}`
-          : `This SonoSig claim is now registered and indexed by PacStac.${claimLabel}`,
+          ? `This SonoSig claim was already registered with PacStac.${claimLabel} Visit PacStac.com to add your claim to your account.`
+          : `This SonoSig claim is now registered and indexed by PacStac.${claimLabel} Visit PacStac.com to add your claim to your account.`,
       );
     } catch (error) {
       setStatus(
@@ -188,6 +378,11 @@ export function PostEnsSignature() {
 
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30">
+      <EnsProgressModal
+        hash={hash}
+        isOpen={isEnsProgressModalOpen}
+        phase={ensPostPhase}
+      />
       <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
         Post
       </p>
@@ -198,7 +393,7 @@ export function PostEnsSignature() {
       <div className="mt-8 grid gap-4">
         <ProofPostingSummary
           proof={lastProof}
-          signature={postTarget === "ens" ? signature : lastProof?.signature}
+          signature={lastProof?.signature}
           target={postTarget}
         />
 
@@ -226,32 +421,78 @@ export function PostEnsSignature() {
 
         {postTarget === "ens" ? (
           <>
-            <label className="grid gap-2">
-              <span className="text-sm font-medium text-zinc-300">ENS name</span>
-              <input
-                className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
-                onChange={(event) => setEnsName(event.target.value)}
-                placeholder="name.eth"
-                value={ensName}
-              />
-            </label>
+            <div className="grid gap-3 md:grid-cols-2">
+              {ensOptions.length ? (
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium text-zinc-300">ENS</span>
+                  <select
+                    className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
+                    onChange={(event) => {
+                      didEditEnsRef.current = true;
+                      setEnsName(
+                        event.target.value === "__custom__"
+                          ? ""
+                          : event.target.value,
+                      );
+                    }}
+                    value={
+                      ensOptions.includes(ensName) ? ensName : "__custom__"
+                    }
+                  >
+                    {ensOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                    <option value="__custom__">Custom ENS</option>
+                  </select>
+                </label>
+              ) : null}
+
+              <label
+                className={
+                  ensOptions.length ? "grid gap-2" : "grid gap-2 md:col-span-2"
+                }
+              >
+                <span className="text-sm font-medium text-zinc-300">
+                  {ensOptions.length ? "Alternate ENS" : "ENS name"}
+                </span>
+                <input
+                  className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
+                  onChange={(event) => {
+                    didEditEnsRef.current = true;
+                    setEnsName(event.target.value);
+                  }}
+                  placeholder={isEnsLoading ? "Resolving ENS..." : "name.eth"}
+                  value={ensOptions.includes(ensName) ? "" : ensName}
+                />
+              </label>
+            </div>
 
             <label className="grid gap-2">
               <span className="text-sm font-medium text-zinc-300">TXT key</span>
               <input
-                className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
-                onChange={(event) => setRecordKey(event.target.value)}
-                value={recordKey}
+                className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 font-mono text-sm text-zinc-200 outline-none"
+                readOnly
+                value={SONOSIG_ENS_RECORD_KEY}
               />
             </label>
 
             <label className="grid gap-2">
-              <span className="text-sm font-medium text-zinc-300">Signature</span>
+              <span className="text-sm font-medium text-zinc-300">
+                TXT value
+              </span>
               <textarea
-                className="min-h-32 rounded-md border border-white/15 bg-zinc-950 px-3 py-3 font-mono text-sm text-zinc-200 outline-none transition focus:border-cyan-300"
-                onChange={(event) => setSignature(event.target.value)}
-                value={signature}
+                className="min-h-28 rounded-md border border-white/15 bg-zinc-950 px-3 py-3 font-mono text-sm text-zinc-200 outline-none"
+                placeholder='{"v":1,"latest":"sonosig:sha256:<claim_hash>"}'
+                readOnly
+                value={ensRecordValue}
               />
+              <span className="text-xs leading-5 text-zinc-500">
+                {pacstacRegistration?.claimId
+                  ? "SonoSig writes one ENS text record that points readers to the latest verified PacStac claim instead of storing the full signature on ENS."
+                  : "Register with PacStac first; then SonoSig will generate this single ENS text-record value."}
+              </span>
             </label>
           </>
         ) : null}
@@ -279,11 +520,11 @@ export function PostEnsSignature() {
         {postTarget === "ens" ? (
           <button
             className="ml-auto w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isPending || isConfirming}
+            disabled={isEnsPosting || isConfirming || !pacstacRegistration?.claimId}
             onClick={handlePost}
             type="button"
           >
-            {isPending || isConfirming ? "Posting..." : "Post to ENS"}
+            {isEnsPosting || isConfirming ? "Posting..." : "Post to ENS"}
           </button>
         ) : pacstacRegistration ? null : (
           <button
@@ -296,7 +537,7 @@ export function PostEnsSignature() {
           </button>
         )}
 
-        <p className="text-center text-sm leading-6 text-zinc-400">
+        <p className="max-w-full break-words text-center text-sm leading-6 text-zinc-400">
           {displayStatus}
         </p>
       </div>
@@ -374,6 +615,88 @@ function ProofPostingSummary({
   );
 }
 
+function EnsProgressModal({
+  hash,
+  isOpen,
+  phase,
+}: {
+  hash?: Hash;
+  isOpen: boolean;
+  phase: EnsPostPhase;
+}) {
+  if (!isOpen) {
+    return null;
+  }
+
+  const title =
+    phase === "submitted"
+      ? "Transaction submitted. Waiting for confirmation..."
+      : phase === "confirming-wallet"
+        ? "Confirm the ENS update in your wallet..."
+        : "Preparing ENS update...";
+  const detail =
+    phase === "submitted"
+      ? "SonoSig is watching Ethereum mainnet for the transaction receipt."
+      : phase === "confirming-wallet"
+        ? "Your wallet should open a transaction request for the ENS text record."
+        : "SonoSig is resolving the ENS name and preparing the text-record call.";
+
+  return (
+    <div
+      aria-labelledby="ens-progress-title"
+      aria-modal="true"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 backdrop-blur-sm"
+      role="dialog"
+    >
+      <div className="w-full max-w-md rounded-lg border border-cyan-300/20 bg-[#10161c] p-6 shadow-2xl shadow-cyan-950/40">
+        <div className="flex items-center gap-4">
+          <div
+            aria-hidden="true"
+            className="grid h-14 w-14 place-items-center rounded-full border border-cyan-300/30 bg-cyan-300/10"
+          >
+            <span className="h-6 w-6 animate-spin rounded-full border-2 border-cyan-200 border-t-transparent" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+              ENS update
+            </p>
+            <h2
+              className="mt-2 text-xl font-semibold leading-snug text-white"
+              id="ens-progress-title"
+            >
+              {title}
+            </h2>
+          </div>
+        </div>
+
+        <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full w-1/2 animate-[ens-progress_1.4s_ease-in-out_infinite] rounded-full bg-cyan-300" />
+        </div>
+
+        <p className="mt-5 text-sm leading-6 text-zinc-300">{detail}</p>
+        {hash ? (
+          <code className="mt-4 block break-all rounded-md border border-white/10 bg-black/35 px-3 py-3 font-mono text-xs text-zinc-300">
+            {hash}
+          </code>
+        ) : null}
+      </div>
+      <style jsx>{`
+        @keyframes ens-progress {
+          0% {
+            transform: translateX(-110%);
+          }
+          50% {
+            transform: translateX(70%);
+          }
+          100% {
+            transform: translateX(210%);
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function truncateMiddle(value: string, startLength: number, endLength: number) {
   if (value.length <= startLength + endLength + 3) {
     return value;
@@ -398,4 +721,194 @@ function getStoredProof() {
   } catch {
     return null;
   }
+}
+
+function getStoredPacStacRegistration(proof: ProofPayload | null) {
+  if (typeof window === "undefined" || !proof) {
+    return null;
+  }
+
+  const storedRegistration = localStorage.getItem(
+    "sonosig:last-pacstac-registration",
+  );
+
+  if (!storedRegistration) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(storedRegistration) as {
+      proofAudioHash?: string;
+      registration?: PacStacRegistration;
+    };
+
+    if (parsed.proofAudioHash !== proof.audio_hash) {
+      return null;
+    }
+
+    return parsed.registration ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function storePacStacRegistration(
+  proof: ProofPayload | null,
+  registration: PacStacRegistration,
+) {
+  if (typeof window === "undefined" || !proof) {
+    return;
+  }
+
+  localStorage.setItem(
+    "sonosig:last-pacstac-registration",
+    JSON.stringify({
+      proofAudioHash: proof.audio_hash,
+      registration,
+    }),
+  );
+}
+
+function addEnsOption(options: string[], value: string | null | undefined) {
+  if (!value) {
+    return;
+  }
+
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return;
+  }
+
+  if (
+    options.some(
+      (option) => option.toLowerCase() === normalizedValue.toLowerCase(),
+    )
+  ) {
+    return;
+  }
+
+  options.push(normalizedValue);
+}
+
+async function getEnsResolverAddress(
+  name: string,
+  publicClient: EnsResolverClient | undefined,
+) {
+  try {
+    const response = await fetch(
+      `/api/ens/resolver?name=${encodeURIComponent(name)}`,
+    );
+
+    if (response.ok) {
+      const body = (await response.json()) as { resolver?: string };
+
+      if (body.resolver && isAddress(body.resolver)) {
+        return body.resolver;
+      }
+    }
+
+    if (response.status === 404) {
+      return null;
+    }
+  } catch {
+    // Fall back to browser RPC below.
+  }
+
+  try {
+    return (await publicClient?.getEnsResolver({ name })) ?? null;
+  } catch {
+    throw new Error(
+      "The ENS network request failed before the wallet could open. Try again, or update the com.sonosig text record manually in ENS Manager.",
+    );
+  }
+}
+
+function formatEnsPostError(error: unknown) {
+  const message = getErrorMessage(error);
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("user rejected") ||
+    normalizedMessage.includes("user denied") ||
+    normalizedMessage.includes("rejected the request")
+  ) {
+    return "ENS update cancelled. No record was changed.";
+  }
+
+  if (
+    normalizedMessage.includes("insufficient funds") ||
+    normalizedMessage.includes("exceeds the balance")
+  ) {
+    return "The wallet does not have enough ETH on mainnet to update this ENS record.";
+  }
+
+  if (
+    normalizedMessage.includes("unauthorized") ||
+    normalizedMessage.includes("not authorised") ||
+    normalizedMessage.includes("not authorized") ||
+    normalizedMessage.includes("reverted") ||
+    normalizedMessage.includes("execution reverted")
+  ) {
+    return "The ENS resolver rejected the update. Connect the wallet that owns or manages this ENS name, or update the record manually in ENS Manager.";
+  }
+
+  if (
+    normalizedMessage.includes("wrong network") ||
+    normalizedMessage.includes("chain mismatch") ||
+    normalizedMessage.includes("switch chain")
+  ) {
+    return "Switch to Ethereum mainnet to update this ENS record.";
+  }
+
+  const cleanedMessage = message
+    .split("Raw Call Arguments")[0]
+    .split("Request Arguments")[0]
+    .split("Contract Call")[0]
+    .trim();
+
+  return cleanedMessage
+    ? truncateEnd(cleanedMessage, 160)
+    : "Unable to update the ENS text record.";
+}
+
+function getErrorMessage(error: unknown) {
+  if (typeof error === "object" && error) {
+    const maybeError = error as {
+      details?: unknown;
+      message?: unknown;
+      shortMessage?: unknown;
+    };
+
+    if (typeof maybeError.shortMessage === "string") {
+      return maybeError.shortMessage;
+    }
+
+    if (typeof maybeError.details === "string") {
+      return maybeError.details;
+    }
+
+    if (typeof maybeError.message === "string") {
+      return maybeError.message;
+    }
+  }
+
+  return "Unable to update the ENS text record.";
+}
+
+function truncateEnd(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}...`;
+}
+
+function logEnsPost(message: string, context?: Record<string, unknown>) {
+  if (context) {
+    console.info(`[SonoSig ENS] ${message}`, context);
+    return;
+  }
+
+  console.info(`[SonoSig ENS] ${message}`);
 }

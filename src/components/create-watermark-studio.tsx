@@ -805,10 +805,8 @@ function EmbeddingVisualization({
         />
       ) : visualizationMode === "signal-atlas" ? (
         <SignalAtlasVisualization
-          address={address}
           peaks={waveform}
           progress={clampedProgress}
-          signature={signature}
         />
       ) : (
         <EightBitVisualization
@@ -941,15 +939,11 @@ function OriginalEmbeddingVisualization({
 }
 
 function SignalAtlasVisualization({
-  address,
   peaks,
   progress,
-  signature,
 }: {
-  address: string;
   peaks: number[];
   progress: number;
-  signature: string;
 }) {
   const viewWidth = 320;
   const viewHeight = 190;
@@ -973,7 +967,13 @@ function SignalAtlasVisualization({
     width,
     height - 24,
   );
-  const hashValues = hashToValues(`${address}${signature || "pending"}`, 72);
+  const transients = deltaSeries(samples);
+  const roughness = rollingAverage(transients, 5);
+  const featureRows = [
+    { color: "#0f766e", values: samples, y: 151 },
+    { color: "#dc2626", values: transients, y: 162 },
+    { color: "#0891b2", values: roughness, y: 173 },
+  ];
   const progressX = plot.left + width * progress;
   const progressSampleIndex = Math.min(
     samples.length - 1,
@@ -982,7 +982,6 @@ function SignalAtlasVisualization({
   const activePeak = samples[progressSampleIndex] ?? 0;
   const activeY = plot.bottom - activePeak * height;
   const tickValues = [0.25, 0.5, 0.75];
-  const rhythmRows = [151, 160, 169, 178];
 
   return (
     <div className="relative overflow-hidden rounded-md border border-white/10 bg-[#f8faf7] px-3 py-4 text-zinc-950">
@@ -992,6 +991,12 @@ function SignalAtlasVisualization({
         role="img"
         viewBox={`0 0 ${viewWidth} ${viewHeight}`}
       >
+        <title>Signal atlas audio envelope analysis</title>
+        <desc>
+          The chart plots normalized audio peak energy over time, rolling
+          average, cumulative mean, transient changes, and local roughness from
+          the selected audio file.
+        </desc>
         <defs>
           <clipPath id="signal-atlas-progress-clip">
             <rect
@@ -1080,34 +1085,36 @@ function SignalAtlasVisualization({
           );
         })}
 
-        {hashValues.map((value, index) => {
-          const x = plot.left + (index / (hashValues.length - 1)) * width;
-          const row = rhythmRows[index % rhythmRows.length];
-          const heightValue = 2 + value * 7;
-          const isEncoded = index / (hashValues.length - 1) <= progress;
+        {featureRows.map((row, rowIndex) => (
+          <g key={`feature-row-${rowIndex}`}>
+            <line
+              stroke="#111827"
+              strokeOpacity="0.12"
+              strokeWidth="0.45"
+              x1={plot.left}
+              x2={plot.right}
+              y1={row.y}
+              y2={row.y}
+            />
+            {row.values.map((value, index) => {
+              const x = plot.left + (index / (row.values.length - 1)) * width;
+              const barHeight = Math.max(0.7, value * 9);
+              const isEncoded = index / (row.values.length - 1) <= progress;
 
-          return (
-            <g key={`hash-${index}`}>
-              <rect
-                fill={isEncoded ? "#0891b2" : "#111827"}
-                height={heightValue}
-                opacity={isEncoded ? "0.78" : "0.18"}
-                width="1.35"
-                x={x}
-                y={row - heightValue / 2}
-              />
-              {value > 0.72 ? (
-                <circle
-                  cx={x}
-                  cy={row + 8}
-                  fill={isEncoded ? "#dc2626" : "#111827"}
-                  opacity={isEncoded ? "0.74" : "0.18"}
-                  r="0.9"
+              return (
+                <rect
+                  fill={isEncoded ? row.color : "#111827"}
+                  height={barHeight}
+                  key={`feature-${rowIndex}-${index}`}
+                  opacity={isEncoded ? "0.76" : "0.16"}
+                  width="1.35"
+                  x={x}
+                  y={row.y - barHeight / 2}
                 />
-              ) : null}
-            </g>
-          );
-        })}
+              );
+            })}
+          </g>
+        ))}
 
         <g clipPath="url(#signal-atlas-progress-clip)">
           <rect
@@ -1165,7 +1172,7 @@ function EightBitVisualization({
   const cells = buildEightBitAudioCells(peaks, columns, rows);
 
   return (
-    <div className="relative overflow-hidden rounded-md border border-sky-300/30 bg-[#06151d] p-3">
+    <div className="relative overflow-hidden rounded-md bg-[#06151d] p-3">
       <svg
         className="h-72 w-full [image-rendering:pixelated]"
         preserveAspectRatio="none"
@@ -1215,14 +1222,6 @@ function EightBitVisualization({
           );
         })}
 
-        <rect
-          fill="none"
-          height={viewHeight}
-          stroke="#7dd3fc"
-          strokeOpacity="0.28"
-          strokeWidth="1"
-          width={viewWidth}
-        />
       </svg>
     </div>
   );
@@ -1446,15 +1445,20 @@ function cumulativeMean(values: number[]) {
   });
 }
 
-function hashToValues(value: string, count: number) {
-  const source = value || "pending";
+function deltaSeries(values: number[]) {
+  const deltas = values.map((value, index) => {
+    const previous = values[Math.max(0, index - 1)] ?? value;
+    const next = values[Math.min(values.length - 1, index + 1)] ?? value;
 
-  return Array.from({ length: count }, (_, index) => {
-    const charCode = source.charCodeAt(index % source.length);
-    const mixed = (charCode * 17 + index * 31 + source.length * 13) % 101;
-
-    return mixed / 100;
+    return Math.max(Math.abs(value - previous), Math.abs(next - value));
   });
+  const maxDelta = Math.max(...deltas);
+
+  if (maxDelta <= 0) {
+    return deltas;
+  }
+
+  return deltas.map((value) => clamp01(value / maxDelta));
 }
 
 function clamp01(value: number) {

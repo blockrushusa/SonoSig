@@ -36,7 +36,9 @@ export function useAdminAccess() {
         const token = await getIdTokenResult(user);
 
         if (isActive) {
-          setIsAdmin(token.claims.admin === true);
+          setIsAdmin(
+            token.claims.admin === true || token.claims.role === "admin",
+          );
         }
       } catch {
         if (isActive) {

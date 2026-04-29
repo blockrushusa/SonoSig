@@ -1,7 +1,6 @@
 import { AuthGate } from "@/components/auth-gate";
-import { ProofDraftCard } from "@/components/proof-draft-card";
+import { InteractiveSonoSigLogo } from "@/components/interactive-sonosig-logo";
 import { SiteHeader } from "@/components/site-header";
-import { WalletConnect } from "@/components/wallet-connect";
 
 export default function Home() {
   return (
@@ -9,35 +8,26 @@ export default function Home() {
       <SiteHeader />
 
       <AuthGate>
-        <section className="grid flex-1 items-center gap-10 px-6 py-12 lg:grid-cols-[1fr_420px] lg:px-16">
-          <div className="max-w-3xl">
-            <p className="mb-5 text-sm font-medium uppercase tracking-[0.18em] text-zinc-400">
-              Next.js · React · TypeScript · wagmi · viem · RainbowKit · Firebase
-            </p>
-            <h2 className="text-5xl font-semibold leading-tight text-white">
-              Connect a wallet to anchor audio proofs.
-            </h2>
-            <p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-300">
-              Sonosig is set up with a typed Web3 foundation for wallet-aware
-              workflows. The connector supports Ethereum mainnet, Base, and
-              Sepolia out of the box.
-            </p>
-          </div>
+        <section className="flex flex-1 items-start px-6 pb-20 pt-20 sm:pt-24 lg:px-16 lg:pb-24 lg:pt-[12vh]">
+          <div className="mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[minmax(0,680px)_minmax(340px,480px)] lg:justify-between lg:gap-20">
+            <div className="max-w-[680px]">
+              <p className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200/70">
+              Wallet-signed audio provenance
+              </p>
+              <h2 className="max-w-[13.5ch] text-[clamp(2.75rem,4.6vw,5.25rem)] font-semibold leading-[1] tracking-normal text-white">
+                Anchor audio proofs that travel with the file.
+              </h2>
+              <p className="mt-7 max-w-[620px] text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">
+                SonoSig links a creator wallet, audio fingerprint, metadata, and
+                signature into a portable proof that can be embedded, verified,
+                and registered with public trust layers.
+              </p>
+            </div>
 
-          <div className="rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30">
-            <h3 className="text-lg font-semibold">Wallet status</h3>
-            <p className="mt-3 text-sm leading-6 text-zinc-400">
-              Use the wallet control to connect, switch networks, and prepare
-              account-aware signing flows.
-            </p>
-            <div className="mt-6">
-              <WalletConnect />
+            <div className="flex justify-center lg:justify-end">
+              <InteractiveSonoSigLogo />
             </div>
           </div>
-        </section>
-
-        <section className="px-6 pb-12 lg:px-16">
-          <ProofDraftCard />
         </section>
       </AuthGate>
     </main>

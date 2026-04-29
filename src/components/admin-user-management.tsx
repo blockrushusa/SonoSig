@@ -11,7 +11,10 @@ type AdminUser = {
   disabled: boolean;
   isAdmin: boolean;
   isBootstrapAdmin: boolean;
+  role: UserRole;
 };
+
+type UserRole = "admin" | "new" | "verified";
 
 type UsersResponse = {
   users: AdminUser[];
@@ -29,6 +32,7 @@ export function AdminUserManagement() {
   const { user } = useAuthUser();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [email, setEmail] = useState("");
+  const [newUserRole, setNewUserRole] = useState<UserRole>("verified");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -75,7 +79,7 @@ export function AdminUserManagement() {
     }
   }
 
-  async function setAdminAccess(target: AdminUser | string, isAdmin: boolean) {
+  async function setUserRole(target: AdminUser | string, role: UserRole) {
     setError("");
     setStatus("");
     setUpdatingUid(typeof target === "string" ? target : target.uid);
@@ -84,8 +88,8 @@ export function AdminUserManagement() {
       const headers = await getAuthorizationHeader();
       const body =
         typeof target === "string"
-          ? { admin: isAdmin, email: target }
-          : { admin: isAdmin, uid: target.uid };
+          ? { email: target, role }
+          : { role, uid: target.uid };
       const response = await fetch("/api/admin/users", {
         body: JSON.stringify(body),
         headers: {
@@ -110,7 +114,8 @@ export function AdminUserManagement() {
         return [...nextUsers, updatedUser];
       });
       setEmail("");
-      setStatus(`${getUserLabel(updatedUser)} admin access updated.`);
+      setNewUserRole("verified");
+      setStatus(`${getUserLabel(updatedUser)} role updated to ${formatRole(updatedUser.role)}.`);
     } catch (updateError) {
       setError(
         updateError instanceof Error
@@ -183,13 +188,13 @@ export function AdminUserManagement() {
         </div>
 
         <form
-          className="grid gap-4 rounded-lg border border-white/10 bg-white/[0.04] p-5 sm:grid-cols-[1fr_auto]"
+          className="grid gap-4 rounded-lg border border-white/10 bg-white/[0.04] p-5 sm:grid-cols-[1fr_180px_auto]"
           onSubmit={(event) => {
             event.preventDefault();
             const targetEmail = email.trim();
 
             if (targetEmail) {
-              void setAdminAccess(targetEmail, true);
+              void setUserRole(targetEmail, newUserRole);
             }
           }}
         >
@@ -200,12 +205,21 @@ export function AdminUserManagement() {
             type="email"
             value={email}
           />
+          <select
+            className="rounded-md border border-white/15 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 outline-none transition focus:border-cyan-300"
+            onChange={(event) => setNewUserRole(event.target.value as UserRole)}
+            value={newUserRole}
+          >
+            <option value="new">New user</option>
+            <option value="verified">Verified user</option>
+            <option value="admin">Admin</option>
+          </select>
           <button
             className="rounded-md bg-cyan-300 px-4 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-wait disabled:opacity-70"
             disabled={!email.trim() || updatingUid !== null}
             type="submit"
           >
-            Make admin
+            Set role
           </button>
         </form>
 
@@ -244,15 +258,7 @@ export function AdminUserManagement() {
                       {siteUser.uid}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {siteUser.isAdmin ? (
-                        <span className="rounded border border-cyan-300/30 px-2 py-1 text-xs font-semibold text-cyan-200">
-                          Admin
-                        </span>
-                      ) : (
-                        <span className="rounded border border-white/10 px-2 py-1 text-xs font-semibold text-zinc-400">
-                          User
-                        </span>
-                      )}
+                      <RoleBadge role={siteUser.role} />
                       {siteUser.isBootstrapAdmin ? (
                         <span className="rounded border border-amber-300/30 px-2 py-1 text-xs font-semibold text-amber-200">
                           Bootstrap
@@ -266,23 +272,21 @@ export function AdminUserManagement() {
                     </div>
                   </div>
 
-                  <button
-                    className={
-                      siteUser.isAdmin
-                        ? "rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                        : "rounded-md bg-cyan-300 px-3 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-wait disabled:opacity-70"
-                    }
+                  <select
+                    className="rounded-md border border-white/15 bg-zinc-950 px-3 py-2 text-sm font-semibold text-white outline-none transition focus:border-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={
                       updatingUid !== null ||
-                      (siteUser.isAdmin && siteUser.isBootstrapAdmin)
+                      siteUser.isBootstrapAdmin
                     }
-                    onClick={() =>
-                      void setAdminAccess(siteUser, !siteUser.isAdmin)
+                    onChange={(event) =>
+                      void setUserRole(siteUser, event.target.value as UserRole)
                     }
-                    type="button"
+                    value={siteUser.role}
                   >
-                    {siteUser.isAdmin ? "Remove admin" : "Make admin"}
-                  </button>
+                    <option value="new">New user</option>
+                    <option value="verified">Verified user</option>
+                    <option value="admin">Admin</option>
+                  </select>
                 </div>
               ))}
             </div>
@@ -290,5 +294,41 @@ export function AdminUserManagement() {
         </section>
       </div>
     </section>
+  );
+}
+
+function formatRole(role: UserRole) {
+  if (role === "admin") {
+    return "Admin";
+  }
+
+  if (role === "verified") {
+    return "Verified user";
+  }
+
+  return "New user";
+}
+
+function RoleBadge({ role }: { role: UserRole }) {
+  if (role === "admin") {
+    return (
+      <span className="rounded border border-cyan-300/30 px-2 py-1 text-xs font-semibold text-cyan-200">
+        Admin
+      </span>
+    );
+  }
+
+  if (role === "verified") {
+    return (
+      <span className="rounded border border-emerald-300/30 px-2 py-1 text-xs font-semibold text-emerald-200">
+        Verified user
+      </span>
+    );
+  }
+
+  return (
+    <span className="rounded border border-white/10 px-2 py-1 text-xs font-semibold text-zinc-400">
+      New user
+    </span>
   );
 }
