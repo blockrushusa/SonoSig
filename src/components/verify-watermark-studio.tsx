@@ -62,10 +62,7 @@ export function VerifyWatermarkStudio() {
       try {
         const audioProofHashes = await createWatermarkedAudioProofHashes(bytes);
 
-        if (
-          audioProofHashes.audio_hash !== payload.audio_hash ||
-          audioProofHashes.audio_fingerprint !== payload.audio_fingerprint
-        ) {
+        if (!audioProofHashesMatch(audioProofHashes, payload)) {
           setVerification({
             status: "invalid",
             reason: "Watermark found, but the audio fingerprint does not match.",
@@ -180,6 +177,21 @@ export function VerifyWatermarkStudio() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function audioProofHashesMatch(
+  audioProofHashes: { audio_fingerprint: string; audio_hash: string },
+  payload: ProofPayload,
+) {
+  const legacyFingerprint = `fp_${audioProofHashes.audio_hash
+    .replace(/^sha256:/, "")
+    .slice(0, 12)}`;
+
+  return (
+    audioProofHashes.audio_hash === payload.audio_hash &&
+    (audioProofHashes.audio_fingerprint === payload.audio_fingerprint ||
+      legacyFingerprint === payload.audio_fingerprint)
   );
 }
 

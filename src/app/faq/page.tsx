@@ -121,7 +121,7 @@ const faqs = [
   {
     question: "Is my audio uploaded?",
     answer:
-      "No for the current browser workflow. Decoding, encoding, preview, export, and verification happen locally in your browser.",
+      "No. Decoding, encoding, preview, export, and verification happen locally in your browser.",
   },
   {
     question: "What should I encode?",

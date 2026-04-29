@@ -1,4 +1,3 @@
-import { adminAuth } from "@/lib/firebase/admin";
 import { buildSiweMessage, type ProofPayload } from "@/lib/audio-watermark";
 
 export const runtime = "nodejs";
@@ -36,17 +35,6 @@ const PACSTAC_CLAIMS_URL =
 
 function jsonError(message: string, status: number) {
   return Response.json({ error: message }, { status });
-}
-
-async function requireUser(request: Request) {
-  const authorization = request.headers.get("authorization");
-  const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-
-  if (!token) {
-    return null;
-  }
-
-  return adminAuth.verifyIdToken(token);
 }
 
 function isHexAddress(value: unknown): value is `0x${string}` {
@@ -108,7 +96,13 @@ function toPacStacPayload(proof: ProofPayload): PacStacClaimPayload {
     throw new Error("Proof audio_hash must be sha256:<64 hex chars>.");
   }
 
-  if (!isSha256(proof.audio_fingerprint)) {
+  const audioFingerprint = isSha256(proof.audio_fingerprint)
+    ? proof.audio_fingerprint
+    : isSha256(proof.audioFingerprint)
+      ? proof.audioFingerprint
+      : proof.audio_hash;
+
+  if (!isSha256(audioFingerprint)) {
     throw new Error("Proof audio_fingerprint must be sha256:<64 hex chars>.");
   }
 
@@ -130,7 +124,7 @@ function toPacStacPayload(proof: ProofPayload): PacStacClaimPayload {
     wallet: proof.wallet,
     chain_id: proof.chain_id,
     audio_hash: proof.audio_hash,
-    audio_fingerprint: proof.audio_fingerprint,
+    audio_fingerprint: audioFingerprint,
     issued_at: proof.issued_at,
     nonce: proof.nonce,
     signature_type: proof.signature_type,
@@ -160,16 +154,6 @@ export async function POST(request: Request) {
 
   if (!apiKey) {
     return jsonError("PACSTAC_API_KEY is not configured.", 500);
-  }
-
-  try {
-    const user = await requireUser(request);
-
-    if (!user) {
-      return jsonError("Authentication required.", 401);
-    }
-  } catch {
-    return jsonError("Authentication required.", 401);
   }
 
   let body: RegisterClaimBody;

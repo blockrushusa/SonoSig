@@ -16,7 +16,6 @@ import {
   type ProofDetailsTab,
 } from "@/components/proof-details-tabs";
 import type { ProofPayload } from "@/lib/audio-watermark";
-import { useAuthUser } from "@/lib/firebase/use-auth-user";
 
 const ENS_TEXT_ABI = [
   {
@@ -53,7 +52,6 @@ type PacStacRegistration = {
 
 export function PostEnsSignature() {
   const { address, isConnected } = useAccount();
-  const { user } = useAuthUser();
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId: mainnet.id });
   const { switchChainAsync } = useSwitchChain();
@@ -141,21 +139,14 @@ export function PostEnsSignature() {
       return;
     }
 
-    if (!user) {
-      setStatus("Sign in before registering with PacStac.");
-      return;
-    }
-
     setIsPacstacPosting(true);
     setPacstacRegistration(null);
     setStatus("Registering signed claim with PacStac...");
 
     try {
-      const token = await user.getIdToken();
       const response = await fetch("/api/pacstac/sonosig/claims", {
         body: JSON.stringify({ proof: lastProof }),
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         method: "POST",
@@ -174,10 +165,15 @@ export function PostEnsSignature() {
       }
 
       setPacstacRegistration(responseBody as PacStacRegistration);
+      const registration = responseBody as PacStacRegistration;
+      const claimLabel = registration.claimId
+        ? ` Claim ID: ${registration.claimId}`
+        : "";
+
       setStatus(
-        (responseBody as PacStacRegistration).idempotent
-          ? "PacStac already has this exact claim."
-          : "PacStac claim registered.",
+        registration.idempotent
+          ? `This SonoSig claim was already registered with PacStac.${claimLabel}`
+          : `This SonoSig claim is now registered and indexed by PacStac.${claimLabel}`,
       );
     } catch (error) {
       setStatus(
@@ -289,7 +285,7 @@ export function PostEnsSignature() {
           >
             {isPending || isConfirming ? "Posting..." : "Post to ENS"}
           </button>
-        ) : (
+        ) : pacstacRegistration ? null : (
           <button
             className="ml-auto w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isPacstacPosting || !lastProof}

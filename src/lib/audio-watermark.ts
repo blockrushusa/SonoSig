@@ -300,7 +300,7 @@ export async function createAudioFingerprint(audioBuffer: AudioBuffer) {
 export async function createAudioProofHashes(audioBuffer: AudioBuffer) {
   const audio_hash = await createAudioFingerprint(audioBuffer);
   return {
-    audio_fingerprint: createFingerprintId(audio_hash),
+    audio_fingerprint: audio_hash,
     audio_hash,
   };
 }
@@ -314,7 +314,7 @@ export async function createWatermarkedAudioFingerprint(bytes: Uint8Array) {
 export async function createWatermarkedAudioProofHashes(bytes: Uint8Array) {
   const audio_hash = await createWatermarkedAudioFingerprint(bytes);
   return {
-    audio_fingerprint: createFingerprintId(audio_hash),
+    audio_fingerprint: audio_hash,
     audio_hash,
   };
 }
@@ -979,10 +979,6 @@ async function hashPcmFingerprint(audio: PcmAudio) {
   return `sha256:${hash}`;
 }
 
-function createFingerprintId(audioHash: string) {
-  return `fp_${audioHash.replace(/^sha256:/, "").slice(0, 12)}`;
-}
-
 function readAscii(bytes: Uint8Array, offset: number, length: number) {
   return new TextDecoder().decode(bytes.slice(offset, offset + length));
 }
@@ -1051,7 +1047,8 @@ function isProofPayload(value: unknown): value is ProofPayload {
     typeof payload.wallet === "string" &&
     payload.wallet.startsWith("0x") &&
     typeof payload.audio_fingerprint === "string" &&
-    payload.audio_fingerprint.startsWith("fp_") &&
+    (payload.audio_fingerprint.startsWith("sha256:") ||
+      payload.audio_fingerprint.startsWith("fp_")) &&
     typeof payload.audio_hash === "string" &&
     payload.audio_hash.startsWith("sha256:") &&
     typeof payload.manifest === "string" &&
