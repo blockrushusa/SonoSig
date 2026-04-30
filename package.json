@@ -3,16 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=20.9.0"
+    "node": "22"
   },
   "scripts": {
     "dev": "next dev -p 3050",
-    "build": "next build",
+    "build": "IS_WEBPACK_TEST=1 next build",
     "start": "next start",
     "lint": "eslint",
     "mcp:stdio": "node scripts/sonosig-mcp-server.mjs",
     "firebase:emulators": "firebase emulators:start --only auth,firestore,hosting",
-    "firebase:deploy": "firebase deploy --only firestore,hosting",
+    "firebase:deploy": "rm -rf .next .firebase && IS_WEBPACK_TEST=1 firebase deploy --only firestore,hosting",
     "firebase:deploy:rules": "firebase deploy --only firestore",
     "dns:porkbun:check": "node scripts/sync-porkbun-firebase-dns.mjs check",
     "dns:porkbun:sync": "node scripts/sync-porkbun-firebase-dns.mjs sync"
