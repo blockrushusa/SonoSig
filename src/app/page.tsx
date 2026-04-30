@@ -17,7 +17,7 @@ export default function Home() {
               Sign the sound.
             </h2>
             <p className="mt-7 max-w-[620px] text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">
-              Agent Accessible Identity and proof system for audio files. Works with{" "}
+              Agent-accessible identity and proof system for audio files. Works with{" "}
               <a
                 className="text-inherit underline decoration-cyan-300/50 underline-offset-4 transition hover:decoration-cyan-200"
                 href="https://pacstac.com/?utm_source=sonosig&utm_medium=homepage&utm_campaign=audio_provenance"
