@@ -8,7 +8,7 @@ export default function Home() {
       <SiteHeader />
 
       <section className="flex flex-1 items-start px-6 pb-20 pt-20 sm:pt-24 lg:px-16 lg:pb-24 lg:pt-[12vh]">
-        <div className="mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[minmax(0,680px)_minmax(340px,480px)] lg:justify-between lg:gap-20">
+        <div className="mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[minmax(0,680px)_minmax(340px,480px)] lg:justify-center lg:gap-10">
           <div className="max-w-[680px]">
             <p className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200/70">
               Wallet-signed audio provenance
@@ -17,7 +17,7 @@ export default function Home() {
               Sign the sound.
             </h2>
             <p className="mt-7 max-w-[620px] text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">
-              Identity and proof system for audio files. Works with{" "}
+              Agent Accessible Identity and proof system for audio files. Works with{" "}
               <a
                 className="text-inherit underline decoration-cyan-300/50 underline-offset-4 transition hover:decoration-cyan-200"
                 href="https://pacstac.com/?utm_source=sonosig&utm_medium=homepage&utm_campaign=audio_provenance"
@@ -41,7 +41,7 @@ export default function Home() {
             <HomeStartButton />
           </div>
 
-          <div className="flex justify-center lg:justify-end">
+          <div className="flex justify-center lg:justify-start">
             <InteractiveSonoSigLogo />
           </div>
         </div>

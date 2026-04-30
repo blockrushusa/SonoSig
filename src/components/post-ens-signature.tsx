@@ -35,6 +35,7 @@ const ENS_TEXT_ABI = [
 
 type PostTarget = "ens" | "pacstac";
 type EnsPostPhase = "confirming-wallet" | "idle" | "resolving" | "submitted";
+type EnsReceiptStatus = "success" | "reverted";
 
 const SONOSIG_ENS_RECORD_KEY = "com.sonosig";
 
@@ -68,8 +69,25 @@ export function PostEnsSignature() {
   const [hash, setHash] = useState<Hash | undefined>();
   const [isEnsPosting, setIsEnsPosting] = useState(false);
   const [ensPostPhase, setEnsPostPhase] = useState<EnsPostPhase>("idle");
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+  const [receiptStatus, setReceiptStatus] = useState<EnsReceiptStatus | null>(
+    null,
+  );
+  const [receiptPollError, setReceiptPollError] = useState("");
+  const [receiptWaitStartedAt, setReceiptWaitStartedAt] = useState<
+    number | null
+  >(null);
+  const [receiptWaitSeconds, setReceiptWaitSeconds] = useState(0);
+  const {
+    data: receipt,
+    error: receiptError,
+    isLoading: isConfirming,
+  } = useWaitForTransactionReceipt({
+    chainId: mainnet.id,
     hash,
+    query: {
+      enabled: Boolean(hash),
+      refetchInterval: 4_000,
+    },
   });
   const [lastProof] = useState<ProofPayload | null>(() => getStoredProof());
   const [postTarget, setPostTarget] = useState<PostTarget>("ens");
@@ -92,11 +110,22 @@ export function PostEnsSignature() {
     }
   }, [ensName]);
 
-  const displayStatus = postTarget === "ens" && isSuccess
-    ? "ENS text record updated."
-    : postTarget === "ens" && isConfirming
-      ? "Transaction submitted. Waiting for confirmation..."
-      : status;
+  const activeReceiptStatus = receiptStatus ?? receipt?.status ?? null;
+  const isEnsConfirmed = activeReceiptStatus === "success";
+  const isEnsReverted = activeReceiptStatus === "reverted";
+  const isEnsReceiptFailed = isEnsReverted || Boolean(receiptError);
+  const isWaitingForReceipt = Boolean(
+    hash && ensPostPhase === "submitted" && !activeReceiptStatus && !receiptError,
+  );
+  const displayStatus = postTarget === "ens" && isEnsConfirmed
+    ? "ENS text record updated on Ethereum mainnet."
+    : postTarget === "ens" && isEnsReverted
+      ? "The ENS transaction was mined but reverted. The text record was not changed."
+      : postTarget === "ens" && receiptError
+        ? "SonoSig could not confirm the transaction receipt. Check the explorer link for the final status."
+        : postTarget === "ens" && (isConfirming || isWaitingForReceipt)
+          ? `Transaction submitted. Watching Ethereum mainnet for the receipt${receiptWaitSeconds ? ` (${receiptWaitSeconds}s)` : ""}...`
+          : status;
 
   const ensRecordValue = pacstacRegistration?.claimId
     ? JSON.stringify({
@@ -105,7 +134,9 @@ export function PostEnsSignature() {
       })
     : "";
   const isEnsProgressModalOpen =
-    (isEnsPosting || isConfirming || ensPostPhase !== "idle") && !isSuccess;
+    (isEnsPosting || isConfirming || ensPostPhase !== "idle") &&
+    !isEnsConfirmed &&
+    !isEnsReceiptFailed;
 
   useEffect(() => {
     didEditEnsRef.current = false;
@@ -246,6 +277,10 @@ export function PostEnsSignature() {
     try {
       setIsEnsPosting(true);
       setHash(undefined);
+      setReceiptStatus(null);
+      setReceiptPollError("");
+      setReceiptWaitStartedAt(null);
+      setReceiptWaitSeconds(0);
       setEnsPostPhase("resolving");
       logEnsPost("start", {
         claimId: pacstacRegistration.claimId,
@@ -304,6 +339,7 @@ export function PostEnsSignature() {
         record_key: SONOSIG_ENS_RECORD_KEY,
       });
       setEnsPostPhase("submitted");
+      setReceiptWaitStartedAt(Date.now());
       setHash(transactionHash);
     } catch (error) {
       const message = formatEnsPostError(error);
@@ -328,13 +364,115 @@ export function PostEnsSignature() {
   }, [hash]);
 
   useEffect(() => {
-    if (!isSuccess || !hash) {
+    if (!hash || !publicClient || receiptStatus) {
+      return;
+    }
+
+    const receiptClient = publicClient;
+    const receiptHash = hash;
+    let isActive = true;
+
+    async function pollReceipt() {
+      try {
+        const polledReceipt = await receiptClient.getTransactionReceipt({
+          hash: receiptHash,
+        });
+
+        if (!isActive) {
+          return;
+        }
+
+        setReceiptStatus(polledReceipt.status);
+        setReceiptPollError("");
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        const message = getErrorMessage(error).toLowerCase();
+
+        if (
+          message.includes("not found") ||
+          message.includes("could not find") ||
+          message.includes("transaction receipt")
+        ) {
+          return;
+        }
+
+        setReceiptPollError(
+          "The app RPC has not returned a receipt yet. Check the explorer link for the final transaction status.",
+        );
+      }
+    }
+
+    void pollReceipt();
+    const interval = window.setInterval(() => {
+      void pollReceipt();
+    }, 4_000);
+
+    return () => {
+      isActive = false;
+      window.clearInterval(interval);
+    };
+  }, [hash, publicClient, receiptStatus]);
+
+  useEffect(() => {
+    if (!receiptWaitStartedAt || !isWaitingForReceipt) {
+      return;
+    }
+
+    const updateElapsedTime = () => {
+      setReceiptWaitSeconds(
+        Math.max(0, Math.floor((Date.now() - receiptWaitStartedAt) / 1_000)),
+      );
+    };
+
+    updateElapsedTime();
+    const interval = window.setInterval(updateElapsedTime, 1_000);
+
+    return () => window.clearInterval(interval);
+  }, [isWaitingForReceipt, receiptWaitStartedAt]);
+
+  useEffect(() => {
+    if (!isEnsConfirmed || !hash) {
       return;
     }
 
     logEnsPost("confirmed", { transactionHash: hash });
+    queueMicrotask(() => {
+      setEnsPostPhase("idle");
+      setStatus("ENS text record updated on Ethereum mainnet.");
+    });
     trackEvent("ens_post_confirmed");
-  }, [hash, isSuccess]);
+  }, [hash, isEnsConfirmed]);
+
+  useEffect(() => {
+    if (!hash || !isEnsReceiptFailed) {
+      return;
+    }
+
+    if (isEnsReverted) {
+      logEnsPost("reverted", { transactionHash: hash });
+      queueMicrotask(() => {
+        setEnsPostPhase("idle");
+        setStatus(
+          "The ENS transaction was mined but reverted. The text record was not changed.",
+        );
+      });
+      trackEvent("ens_post_failed", { reason: "transaction_reverted" });
+      return;
+    }
+
+    const message =
+      receiptPollError ||
+      "SonoSig could not confirm the transaction receipt. Check the explorer link for the final status.";
+    logEnsPost("receipt watch error", { transactionHash: hash, message });
+    queueMicrotask(() => {
+      setEnsPostPhase("idle");
+      setStatus(message);
+    });
+    trackEvent("ens_post_failed", { reason: message });
+  }, [hash, isEnsReceiptFailed, isEnsReverted, receiptPollError]);
 
   async function handleRegisterPacStac() {
     if (!lastProof) {
@@ -407,9 +545,11 @@ export function PostEnsSignature() {
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30">
       <EnsProgressModal
+        elapsedSeconds={receiptWaitSeconds}
         hash={hash}
         isOpen={isEnsProgressModalOpen}
         phase={ensPostPhase}
+        receiptPollError={receiptPollError}
       />
       <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
         Post
@@ -551,11 +691,18 @@ export function PostEnsSignature() {
         {postTarget === "ens" ? (
           <button
             className="ml-auto w-fit rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isEnsPosting || isConfirming || !pacstacRegistration?.claimId}
+            disabled={
+              isEnsPosting ||
+              isConfirming ||
+              isWaitingForReceipt ||
+              !pacstacRegistration?.claimId
+            }
             onClick={handlePost}
             type="button"
           >
-            {isEnsPosting || isConfirming ? "Posting..." : "Post to ENS"}
+            {isEnsPosting || isConfirming || isWaitingForReceipt
+              ? "Posting..."
+              : "Post to ENS"}
           </button>
         ) : pacstacRegistration ? null : (
           <button
@@ -647,18 +794,23 @@ function ProofPostingSummary({
 }
 
 function EnsProgressModal({
+  elapsedSeconds,
   hash,
   isOpen,
   phase,
+  receiptPollError,
 }: {
+  elapsedSeconds: number;
   hash?: Hash;
   isOpen: boolean;
   phase: EnsPostPhase;
+  receiptPollError: string;
 }) {
   if (!isOpen) {
     return null;
   }
 
+  const explorerUrl = hash ? getEtherscanTransactionUrl(hash) : "";
   const title =
     phase === "submitted"
       ? "Transaction submitted. Waiting for confirmation..."
@@ -667,10 +819,16 @@ function EnsProgressModal({
         : "Preparing ENS update...";
   const detail =
     phase === "submitted"
-      ? "SonoSig is watching Ethereum mainnet for the transaction receipt."
+      ? "SonoSig is polling Ethereum mainnet for the transaction receipt through the app RPC. MetaMask or the explorer may show success first; this screen closes when SonoSig receives the same receipt."
       : phase === "confirming-wallet"
         ? "Your wallet should open a transaction request for the ENS text record."
         : "SonoSig is resolving the ENS name and preparing the text-record call.";
+  const stepLabel =
+    phase === "submitted"
+      ? "Step 3 of 3"
+      : phase === "confirming-wallet"
+        ? "Step 2 of 3"
+        : "Step 1 of 3";
 
   return (
     <div
@@ -704,11 +862,34 @@ function EnsProgressModal({
           <div className="h-full w-1/2 animate-[ens-progress_1.4s_ease-in-out_infinite] rounded-full bg-cyan-300" />
         </div>
 
-        <p className="mt-5 text-sm leading-6 text-zinc-300">{detail}</p>
+        <div className="mt-5 grid gap-3 text-sm leading-6 text-zinc-300">
+          <p className="font-medium text-cyan-200">{stepLabel}</p>
+          <p>{detail}</p>
+          {phase === "submitted" ? (
+            <p className="text-zinc-400">
+              Watching mainnet receipt
+              {elapsedSeconds ? ` for ${elapsedSeconds}s` : ""}. No new wallet
+              action is needed unless the transaction fails or reverts.
+            </p>
+          ) : null}
+          {receiptPollError ? (
+            <p className="text-amber-100">{receiptPollError}</p>
+          ) : null}
+        </div>
         {hash ? (
-          <code className="mt-4 block break-all rounded-md border border-white/10 bg-black/35 px-3 py-3 font-mono text-xs text-zinc-300">
-            {hash}
-          </code>
+          <div className="mt-4 grid gap-3">
+            <code className="block break-all rounded-md border border-white/10 bg-black/35 px-3 py-3 font-mono text-xs text-zinc-300">
+              {hash}
+            </code>
+            <a
+              className="w-fit rounded-md border border-cyan-300/30 px-3 py-2 text-sm font-semibold text-cyan-200 transition hover:border-cyan-200 hover:text-white"
+              href={explorerUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              View on Etherscan
+            </a>
+          </div>
         ) : null}
       </div>
       <style jsx>{`
@@ -933,6 +1114,10 @@ function truncateEnd(value: string, maxLength: number) {
   }
 
   return `${value.slice(0, maxLength)}...`;
+}
+
+function getEtherscanTransactionUrl(hash: Hash) {
+  return `https://etherscan.io/tx/${hash}`;
 }
 
 function logEnsPost(message: string, context?: Record<string, unknown>) {

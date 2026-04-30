@@ -1,5 +1,6 @@
 "use client";
 
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useEffect, useRef, useState } from "react";
 import { useAccount, usePublicClient, useSignMessage } from "wagmi";
 import { mainnet } from "wagmi/chains";
@@ -350,6 +351,37 @@ export function CreateWatermarkStudio() {
   const containerClass = hasPreview
     ? "mx-auto w-full max-w-6xl"
     : "mx-auto w-full max-w-3xl";
+  const continueLabel = isEncoding || isPending
+    ? "Encoding..."
+    : sourceFile && !canEncode
+      ? "Connect wallet"
+      : "Continue";
+
+  function renderContinueButton(className: string) {
+    return (
+      <ConnectButton.Custom>
+        {({ mounted, openConnectModal }) => (
+          <button
+            className={className}
+            disabled={!sourceFile || isEncoding || isPending || !mounted}
+            onClick={() => {
+              if (!canEncode) {
+                setStatus("Connect your wallet to sign this proof.");
+                trackEvent("wallet_connect_open", { location: "create_continue" });
+                openConnectModal?.();
+                return;
+              }
+
+              void handleEncode();
+            }}
+            type="button"
+          >
+            {continueLabel}
+          </button>
+        )}
+      </ConnectButton.Custom>
+    );
+  }
 
   return (
     <div className={containerClass}>
@@ -687,14 +719,9 @@ export function CreateWatermarkStudio() {
             />
           </div>
           {!encodedAudio && !hasPreview ? (
-            <button
-              className="mx-auto w-full max-w-48 rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canEncode || isEncoding || isPending}
-              onClick={handleEncode}
-              type="button"
-            >
-              {isEncoding || isPending ? "Encoding..." : "Continue"}
-            </button>
+            renderContinueButton(
+              "mx-auto w-full max-w-48 rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50",
+            )
           ) : null}
 
           {status ? (
@@ -733,14 +760,9 @@ export function CreateWatermarkStudio() {
 
           {!encodedAudio && hasPreview ? (
             <div className="flex justify-end">
-              <button
-                className="w-full rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-40"
-                disabled={!canEncode || isEncoding || isPending}
-                onClick={handleEncode}
-                type="button"
-              >
-                {isEncoding || isPending ? "Encoding..." : "Continue"}
-              </button>
+              {renderContinueButton(
+                "w-full rounded-md bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-40",
+              )}
             </div>
           ) : null}
 
