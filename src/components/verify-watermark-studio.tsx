@@ -15,6 +15,10 @@ import {
   readPayloadFromAudio,
   type ProofPayload,
 } from "@/lib/audio-watermark";
+import {
+  getWeb3Transactions,
+  type Web3Transaction,
+} from "@/lib/web3-transactions";
 
 type AudioHeader = {
   bitDepth?: string;
@@ -39,10 +43,24 @@ type VerificationResult =
       payload?: ProofPayload;
     };
 
+type ProvenanceStatus = {
+  ens: ProvenanceServiceStatus;
+  pacstac: ProvenanceServiceStatus;
+};
+
+type ProvenanceServiceStatus = {
+  claimId?: string;
+  detail: string;
+  hash?: string;
+  label: string;
+  state: "failed" | "missing" | "registered" | "submitted";
+};
+
 export function VerifyWatermarkStudio() {
   const [verification, setVerification] = useState<VerificationResult | null>(
     null,
   );
+  const [provenance, setProvenance] = useState<ProvenanceStatus | null>(null);
   const [status, setStatus] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -75,6 +93,7 @@ export function VerifyWatermarkStudio() {
   async function handleVerify(file: File) {
     setSelectedFileName(file.name);
     setVerification(null);
+    setProvenance(null);
     setActiveTab("proof");
     setIsVerifying(true);
     setStatus("Reading watermark locally...");
@@ -135,6 +154,7 @@ export function VerifyWatermarkStudio() {
         payload,
         profile,
       });
+      setProvenance(getProofProvenanceStatus(payload));
       setStatus(
         audioHashStatus === "verified"
           ? "Watermark verified."
@@ -287,31 +307,120 @@ export function VerifyWatermarkStudio() {
                 {verification.reason}
               </p>
             ) : (
-              <details
-                className="mt-5 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3"
-                onToggle={(event) => {
-                  if (event.currentTarget.open) {
-                    trackEvent("verify_proof_info_expand");
-                  }
-                }}
-              >
-                <summary className="cursor-pointer text-sm font-semibold text-zinc-200">
-                  Proof info
-                </summary>
-                <ProofDetailsTabs
-                  activeTab={activeTab}
-                  onTabChange={setActiveTab}
-                  payload={verification.payload}
-                  profile={verification.profile}
-                  audioHashStatus={verification.audioHashStatus}
-                  audioHashStatusReason={verification.audioHashStatusReason}
-                />
-              </details>
+              <>
+                {provenance ? (
+                  <ProvenancePanel provenance={provenance} />
+                ) : null}
+                <details
+                  className="mt-5 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3"
+                  onToggle={(event) => {
+                    if (event.currentTarget.open) {
+                      trackEvent("verify_proof_info_expand");
+                    }
+                  }}
+                >
+                  <summary className="cursor-pointer text-sm font-semibold text-zinc-200">
+                    Proof info
+                  </summary>
+                  <ProofDetailsTabs
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                    payload={verification.payload}
+                    profile={verification.profile}
+                    audioHashStatus={verification.audioHashStatus}
+                    audioHashStatusReason={verification.audioHashStatusReason}
+                  />
+                </details>
+              </>
             )}
           </div>
         ) : null}
       </section>
     </div>
+  );
+}
+
+function ProvenancePanel({ provenance }: { provenance: ProvenanceStatus }) {
+  return (
+    <section className="mt-5 grid gap-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+            Provenance history
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-white">
+            Registration signals for this proof
+          </h2>
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <ProvenanceCard
+          service="PacStac"
+          status={provenance.pacstac}
+        />
+        <ProvenanceCard service="ENS" status={provenance.ens} />
+      </div>
+    </section>
+  );
+}
+
+function ProvenanceCard({
+  service,
+  status,
+}: {
+  service: "ENS" | "PacStac";
+  status: ProvenanceServiceStatus;
+}) {
+  const isPositive =
+    status.state === "registered" || status.state === "submitted";
+  const isFailed = status.state === "failed";
+  const tone = isPositive
+    ? "border-emerald-300/30 bg-emerald-400/10"
+    : isFailed
+      ? "border-red-400/30 bg-red-500/10"
+      : "border-white/10 bg-zinc-950/50";
+  const icon = isPositive ? "✓" : isFailed ? "!" : "-";
+  const iconClass = isPositive
+    ? "bg-emerald-300 text-emerald-950"
+    : isFailed
+      ? "bg-red-300 text-red-950"
+      : "bg-zinc-800 text-zinc-300";
+
+  return (
+    <article className={`rounded-lg border p-4 ${tone}`}>
+      <div className="flex items-start gap-4">
+        <span
+          aria-hidden="true"
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-lg font-black ${iconClass}`}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold text-white">{service}</h3>
+            <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-300">
+              {status.label}
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-zinc-300">{status.detail}</p>
+          {status.claimId ? (
+            <p className="mt-3 break-all font-mono text-xs text-cyan-100">
+              {status.claimId}
+            </p>
+          ) : null}
+          {status.hash ? (
+            <a
+              className="mt-3 inline-flex rounded-md border border-cyan-300/30 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:border-cyan-200 hover:text-white"
+              href={`https://etherscan.io/tx/${status.hash}`}
+              rel="noreferrer"
+              target="_blank"
+            >
+              View transaction
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -321,6 +430,156 @@ function getVerifyUploadZoneSizeClass(isCompact: boolean) {
 
 function isSupportedAudioName(name: string) {
   return /\.(aif|aiff|m4a|oga|ogg|opus|wav)$/i.test(name);
+}
+
+function getProofProvenanceStatus(payload: ProofPayload): ProvenanceStatus {
+  const transactions = getWeb3Transactions().filter((transaction) =>
+    isProofTransaction(transaction, payload),
+  );
+  const pacstacRegistration =
+    transactions.find(
+      (transaction) => transaction.type === "pacstac-registration",
+    ) ?? getLegacyPacStacRegistration(payload);
+  const ensTransaction = getBestEnsTransaction(
+    transactions.filter((transaction) => transaction.type === "ens-text-record"),
+  );
+
+  return {
+    ens: ensTransaction
+      ? toEnsProvenanceStatus(ensTransaction)
+      : {
+          detail:
+            "No ENS text-record update for this proof was found in this browser history.",
+          label: "Not found",
+          state: "missing",
+        },
+    pacstac: pacstacRegistration
+      ? toPacStacProvenanceStatus(pacstacRegistration)
+      : {
+          detail:
+            "No PacStac registration for this proof was found in this browser history.",
+          label: "Not found",
+          state: "missing",
+        },
+  };
+}
+
+function isProofTransaction(
+  transaction: Web3Transaction,
+  payload: ProofPayload,
+) {
+  return (
+    transaction.proofAudioHash === payload.audio_hash
+  );
+}
+
+function getBestEnsTransaction(transactions: Web3Transaction[]) {
+  return (
+    transactions.find((transaction) => transaction.status === "confirmed") ??
+    transactions.find((transaction) => transaction.status === "submitted") ??
+    transactions.find((transaction) => transaction.status === "failed") ??
+    null
+  );
+}
+
+function toPacStacProvenanceStatus(
+  transaction: Web3Transaction,
+): ProvenanceServiceStatus {
+  return {
+    claimId: transaction.claimId,
+    detail: transaction.idempotent
+      ? "This proof was already registered with PacStac and is ready for discovery."
+      : "This proof is registered with PacStac and available for discovery.",
+    label: "Registered",
+    state: "registered",
+  };
+}
+
+function toEnsProvenanceStatus(
+  transaction: Web3Transaction,
+): ProvenanceServiceStatus {
+  if (transaction.status === "confirmed") {
+    return {
+      claimId: transaction.claimId,
+      detail: transaction.ensName
+        ? `The com.sonosig text record was confirmed for ${transaction.ensName}.`
+        : "The ENS text-record update was confirmed on Ethereum mainnet.",
+      hash: transaction.hash,
+      label: "Registered",
+      state: "registered",
+    };
+  }
+
+  if (transaction.status === "submitted") {
+    return {
+      claimId: transaction.claimId,
+      detail:
+        "The ENS transaction was submitted and is waiting for confirmation.",
+      hash: transaction.hash,
+      label: "Submitted",
+      state: "submitted",
+    };
+  }
+
+  return {
+    claimId: transaction.claimId,
+    detail:
+      transaction.error ??
+      "An ENS transaction for this proof failed or reverted.",
+    hash: transaction.hash,
+    label: "Failed",
+    state: "failed",
+  };
+}
+
+function getLegacyPacStacRegistration(payload: ProofPayload) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const storedRegistration = window.localStorage.getItem(
+    "sonosig:last-pacstac-registration",
+  );
+
+  if (!storedRegistration) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(storedRegistration) as {
+      proofAudioHash?: string;
+      registration?: {
+        claimId?: string;
+        createdAt?: string;
+        idempotent?: boolean;
+        namespace?: string;
+        status?: string;
+        wallet?: string;
+      };
+    };
+
+    if (parsed.proofAudioHash !== payload.audio_hash || !parsed.registration) {
+      return null;
+    }
+
+    return {
+      claimId: parsed.registration.claimId,
+      createdAt: parsed.registration.createdAt ?? new Date().toISOString(),
+      id: `pacstac:${parsed.registration.claimId ?? parsed.proofAudioHash}`,
+      idempotent: parsed.registration.idempotent,
+      namespace: parsed.registration.namespace,
+      network: "PacStac",
+      proofAudioHash: parsed.proofAudioHash,
+      registrationStatus: parsed.registration.status,
+      status: "confirmed",
+      title: "PacStac claim registration",
+      type: "pacstac-registration",
+      updatedAt: new Date().toISOString(),
+      wallet: parsed.registration.wallet ?? payload.wallet,
+    } satisfies Web3Transaction;
+  } catch {
+    return null;
+  }
 }
 
 function audioProofHashesMatch(

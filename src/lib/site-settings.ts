@@ -1,4 +1,6 @@
 export type HomeLogoSettings = {
+  autoResetEnabled: boolean;
+  autoResetIntervalSeconds: number;
   haloFadeDurationSeconds: number;
   haloFadeEnabled: boolean;
   initialMotionEnabled: boolean;
@@ -11,6 +13,8 @@ export type HomeLogoSettings = {
 };
 
 export const DEFAULT_HOME_LOGO_SETTINGS: HomeLogoSettings = {
+  autoResetEnabled: true,
+  autoResetIntervalSeconds: 20,
   haloFadeDurationSeconds: 10,
   haloFadeEnabled: true,
   initialMotionEnabled: true,
@@ -42,6 +46,16 @@ export function coerceSiteSettings(value: unknown): SiteSettings {
 
   return {
     homeLogo: {
+      autoResetEnabled:
+        typeof homeLogo.autoResetEnabled === "boolean"
+          ? homeLogo.autoResetEnabled
+          : DEFAULT_HOME_LOGO_SETTINGS.autoResetEnabled,
+      autoResetIntervalSeconds: clampNumber(
+        homeLogo.autoResetIntervalSeconds,
+        5,
+        120,
+        DEFAULT_HOME_LOGO_SETTINGS.autoResetIntervalSeconds,
+      ),
       haloFadeDurationSeconds: clampNumber(
         homeLogo.haloFadeDurationSeconds,
         1,

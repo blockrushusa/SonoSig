@@ -12,6 +12,13 @@ const FIREBASE_RECORDS = {
   acmeTxt: "8IHy_r99-B_iQojnuFwPGRon3ZEOM-3fH8-S42GJutw",
 };
 
+const GOOGLE_SITE_VERIFICATION_RECORD = {
+  type: "TXT",
+  name: DOMAIN,
+  createName: "",
+  content: "google-site-verification=oCOLPU2BC2F8mO9v9r3kYm5MPClKR9T6T3DR8_XiutE",
+};
+
 const FIREBASE_EMAIL_RECORDS = [
   {
     type: "TXT",
@@ -101,14 +108,17 @@ async function getRecords() {
 }
 
 function isRelevant(record) {
-  const emailRecordNames = new Set(FIREBASE_EMAIL_RECORDS.map((item) => item.name));
+  const managedRecordNames = new Set([
+    GOOGLE_SITE_VERIFICATION_RECORD.name,
+    ...FIREBASE_EMAIL_RECORDS.map((item) => item.name),
+  ]);
 
   return (
     ["A", "ALIAS", "TXT", "CNAME", "MX"].includes(record.type) &&
     (record.name === DOMAIN ||
       record.name === `_acme-challenge.${DOMAIN}` ||
       record.name === `*.${DOMAIN}` ||
-      emailRecordNames.has(record.name))
+      managedRecordNames.has(record.name))
   );
 }
 
@@ -240,6 +250,30 @@ async function sync() {
     });
   }
 
+  if (
+    !hasRecord(
+      afterDelete,
+      GOOGLE_SITE_VERIFICATION_RECORD.type,
+      GOOGLE_SITE_VERIFICATION_RECORD.name,
+      GOOGLE_SITE_VERIFICATION_RECORD.content,
+    )
+  ) {
+    const result = await porkbun(`/dns/create/${DOMAIN}`, {
+      ...(GOOGLE_SITE_VERIFICATION_RECORD.createName
+        ? { name: GOOGLE_SITE_VERIFICATION_RECORD.createName }
+        : {}),
+      type: GOOGLE_SITE_VERIFICATION_RECORD.type,
+      content: GOOGLE_SITE_VERIFICATION_RECORD.content,
+      ttl: "600",
+    });
+    created.push({
+      id: result.id,
+      type: GOOGLE_SITE_VERIFICATION_RECORD.type,
+      name: GOOGLE_SITE_VERIFICATION_RECORD.name,
+      content: GOOGLE_SITE_VERIFICATION_RECORD.content,
+    });
+  }
+
   const finalRecords = await getRecords();
 
   printJson({
@@ -285,6 +319,21 @@ async function check() {
         content: record.content,
       });
     }
+  }
+
+  if (
+    !hasRecord(
+      records,
+      GOOGLE_SITE_VERIFICATION_RECORD.type,
+      GOOGLE_SITE_VERIFICATION_RECORD.name,
+      GOOGLE_SITE_VERIFICATION_RECORD.content,
+    )
+  ) {
+    missing.push({
+      type: GOOGLE_SITE_VERIFICATION_RECORD.type,
+      name: GOOGLE_SITE_VERIFICATION_RECORD.name,
+      content: GOOGLE_SITE_VERIFICATION_RECORD.content,
+    });
   }
 
   printJson({ domain: DOMAIN, missing, records: relevant });

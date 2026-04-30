@@ -2,7 +2,15 @@
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useEffect, useRef, useState } from "react";
-import { useAccount, usePublicClient, useSignMessage } from "wagmi";
+import { isAddress, type Address, type Hash } from "viem";
+import { namehash, normalize } from "viem/ens";
+import {
+  useAccount,
+  usePublicClient,
+  useSignMessage,
+  useSwitchChain,
+  useWalletClient,
+} from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { readAudioMetadata } from "@/lib/audio-metadata";
 import { trackEvent } from "@/lib/analytics";
@@ -23,6 +31,12 @@ import {
   type OutputFormat,
   type ProofPayload,
 } from "@/lib/audio-watermark";
+import {
+  createWeb3TransactionId,
+  updateWeb3Transaction,
+  upsertPacStacRegistrationTransaction,
+  upsertWeb3Transaction,
+} from "@/lib/web3-transactions";
 
 type EncodedAudio = {
   url: string;
@@ -36,6 +50,56 @@ type ProofMetadata = {
   manifest: string;
 };
 type VisualizationMode = "original" | "signal-atlas" | "eight-bit";
+type PostPhase =
+  | "confirming-wallet"
+  | "idle"
+  | "pacstac"
+  | "resolving"
+  | "submitted";
+type PacStacRegistration = {
+  attestation?: {
+    alg?: string;
+    hash?: string;
+    kid?: string;
+    sig?: string;
+  };
+  audioFingerprint?: string;
+  audioHash?: string;
+  claimId?: string;
+  createdAt?: string;
+  idempotent?: boolean;
+  namespace?: string;
+  status?: string;
+  wallet?: string;
+};
+
+type EnsResolverClient = {
+  getEnsResolver: (parameters: { name: string }) => Promise<Address | null>;
+};
+type MainnetReceiptClient = {
+  getTransactionReceipt: (parameters: { hash: Hash }) => Promise<{
+    status: "reverted" | "success";
+  }>;
+  waitForTransactionReceipt: (parameters: { hash: Hash }) => Promise<{
+    status: "reverted" | "success";
+  }>;
+};
+
+const ENS_TEXT_ABI = [
+  {
+    inputs: [
+      { internalType: "bytes32", name: "node", type: "bytes32" },
+      { internalType: "string", name: "key", type: "string" },
+      { internalType: "string", name: "value", type: "string" },
+    ],
+    name: "setText",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
+const SONOSIG_ENS_RECORD_KEY = "com.sonosig";
 
 const VISUALIZATION_MODES: Array<{
   label: string;
@@ -50,11 +114,27 @@ export function CreateWatermarkStudio() {
   const { address, chainId, isConnected } = useAccount();
   const mainnetPublicClient = usePublicClient({ chainId: mainnet.id });
   const { signMessageAsync, isPending } = useSignMessage();
+  const { switchChainAsync } = useSwitchChain();
+  const { data: walletClient } = useWalletClient();
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("wav");
   const [encodedAudio, setEncodedAudio] = useState<EncodedAudio | null>(null);
+  const [encodedProof, setEncodedProof] = useState<ProofPayload | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [isPostModalOpen, setIsPostModalOpen] = useState(false);
+  const [shouldPostPacStac, setShouldPostPacStac] = useState(true);
+  const [shouldPostEns, setShouldPostEns] = useState(true);
+  const [shouldDownloadRegistration, setShouldDownloadRegistration] =
+    useState(true);
+  const [isPostingProof, setIsPostingProof] = useState(false);
+  const [postPhase, setPostPhase] = useState<PostPhase>("idle");
+  const [postStatus, setPostStatus] = useState("");
+  const [postTransactionHash, setPostTransactionHash] = useState<Hash | null>(
+    null,
+  );
+  const [pacStacPostSuccess, setPacStacPostSuccess] = useState(false);
+  const [ensPostSuccess, setEnsPostSuccess] = useState(false);
   const [status, setStatus] = useState("");
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isEncoding, setIsEncoding] = useState(false);
@@ -105,6 +185,11 @@ export function CreateWatermarkStudio() {
     const supportedFormat = getSupportedOutputFormat(inferredFormat);
     setOutputFormat(supportedFormat);
     setEncodedAudio(null);
+    setEncodedProof(null);
+    setIsPostModalOpen(false);
+    setPostPhase("idle");
+    setPostStatus("");
+    setPostTransactionHash(null);
     setHasVisualizationPreview(false);
     setEmbeddingProgress(0);
     setEmbeddingSignature("");
@@ -178,23 +263,48 @@ export function CreateWatermarkStudio() {
       setIsEnsLoading(true);
     });
 
-    mainnetPublicClient
-      .getEnsName({ address })
-      .then((ensName) => {
-        if (!isActive) {
-          return;
+    const ensClient = mainnetPublicClient;
+    const walletAddress = address;
+
+    async function loadEnsOptions() {
+      const options: string[] = [];
+
+      try {
+        const response = await fetch(`/api/ens/names?address=${walletAddress}`);
+
+        if (response.ok) {
+          const body = (await response.json()) as { names?: string[] };
+
+          for (const ensName of body.names ?? []) {
+            addEnsOption(options, ensName);
+          }
+        }
+      } catch {
+        // Indexed ENS ownership lookup is best-effort.
+      }
+
+      try {
+        const reverseName = await ensClient.getEnsName({ address: walletAddress });
+        addEnsOption(options, reverseName);
+      } catch {
+        // Reverse ENS lookup is best-effort.
+      }
+
+      if (!isActive) {
+        return;
+      }
+
+      setEnsOptions(options);
+      setProofMetadata((metadata) => {
+        if (didEditEnsRef.current) {
+          return metadata;
         }
 
-        const options = ensName ? [ensName] : [];
-        setEnsOptions(options);
-        setProofMetadata((metadata) => {
-          if (didEditEnsRef.current) {
-            return metadata;
-          }
+        return { ...metadata, ens: options[0] ?? "" };
+      });
+    }
 
-          return { ...metadata, ens: ensName ?? "" };
-        });
-      })
+    loadEnsOptions()
       .catch(() => {
         if (isActive) {
           setEnsOptions([]);
@@ -313,6 +423,7 @@ export function CreateWatermarkStudio() {
         fileName: createOutputName(sourceFile.name, outputFormat),
         format: outputFormat,
       });
+      setEncodedProof(payload);
       trackEvent("audio_encode_success", {
         output_format: outputFormat,
         payload_bytes: payloadBytes.length,
@@ -343,6 +454,164 @@ export function CreateWatermarkStudio() {
     } else {
       audio.pause();
       trackEvent("encoded_audio_pause");
+    }
+  }
+
+  function handleOpenPostModal() {
+    setShouldPostPacStac(true);
+    setShouldPostEns(true);
+    setShouldDownloadRegistration(true);
+    setPostPhase("idle");
+    setPostStatus("");
+    setPostTransactionHash(null);
+    setPacStacPostSuccess(false);
+    setEnsPostSuccess(false);
+    setIsPostModalOpen(true);
+    trackEvent("create_post_modal_open");
+  }
+
+  async function handlePostProof() {
+    if (!encodedProof) {
+      setPostStatus("Encode an audio proof before posting.");
+      return;
+    }
+
+    if (
+      (!shouldPostPacStac || pacStacPostSuccess) &&
+      (!shouldPostEns || ensPostSuccess)
+    ) {
+      setIsPostModalOpen(false);
+      return;
+    }
+
+    if (!shouldPostPacStac && !shouldPostEns) {
+      setPostStatus("Choose PacStac, ENS, or both.");
+      return;
+    }
+
+    const ensName = proofMetadata.ens.trim() || encodedProof.ens?.trim() || "";
+
+    if (shouldPostEns && !ensName) {
+      setPostStatus("Add an ENS name in settings before posting to ENS.");
+      return;
+    }
+
+    setIsPostingProof(true);
+    setPostStatus("");
+    setPostTransactionHash(null);
+    trackEvent("create_post_start", {
+      ens_selected: shouldPostEns,
+      pacstac_selected: shouldPostPacStac,
+    });
+
+    try {
+      let registration: PacStacRegistration | null =
+        getStoredPacStacRegistration(encodedProof);
+      let ensTransactionHash: Hash | null = null;
+
+      if (shouldPostPacStac && !pacStacPostSuccess) {
+        setPostPhase("pacstac");
+        setPostStatus(getPostingStatusLabel(shouldPostPacStac, shouldPostEns));
+        registration = await registerPacStacClaim(encodedProof);
+        storePacStacRegistration(encodedProof, registration);
+        setPacStacPostSuccess(true);
+        setPostStatus("PacStac registration complete.");
+        trackEvent("create_post_pacstac_success", {
+          idempotent: Boolean(registration.idempotent),
+          status: registration.status,
+        });
+      }
+
+      if (shouldPostEns) {
+        if (!registration?.claimId) {
+          throw new Error(
+            "ENS posting needs a PacStac claim ID. Select PacStac once to register this proof first.",
+          );
+        }
+
+        const normalizedName = normalize(ensName);
+
+        if (!walletClient) {
+          throw new Error("Wallet is not ready. Reconnect your wallet and try again.");
+        }
+
+        if (!mainnetPublicClient) {
+          throw new Error("Ethereum mainnet RPC is not ready. Try again.");
+        }
+
+        setPostPhase("resolving");
+        setPostStatus(getPostingStatusLabel(shouldPostPacStac, shouldPostEns));
+
+        if (chainId !== mainnet.id) {
+          await switchChainAsync({ chainId: mainnet.id });
+        }
+
+        const resolver = await getEnsResolverAddress(
+          normalizedName,
+          mainnetPublicClient,
+        );
+
+        if (!resolver) {
+          throw new Error("This ENS name has no resolver configured.");
+        }
+
+        setPostPhase("confirming-wallet");
+        setPostStatus("Confirm the ENS text record update in your wallet.");
+        const transactionHash = await walletClient.writeContract({
+          abi: ENS_TEXT_ABI,
+          address: resolver,
+          args: [
+            namehash(normalizedName),
+            SONOSIG_ENS_RECORD_KEY,
+            JSON.stringify({ v: 1, latest: registration.claimId }),
+          ],
+          chain: mainnet,
+          functionName: "setText",
+        });
+
+        setPostPhase("submitted");
+        ensTransactionHash = transactionHash;
+        setPostTransactionHash(transactionHash);
+        setEnsPostSuccess(true);
+        setPostStatus("ENS transaction submitted. Track confirmation on Transactions.");
+        trackEvent("create_post_ens_submitted");
+        storeSubmittedEnsTransaction({
+          claimId: registration.claimId,
+          ensName: normalizedName,
+          hash: transactionHash,
+          proof: encodedProof,
+        });
+        void monitorSubmittedEnsTransaction(mainnetPublicClient, transactionHash);
+      }
+
+      setPostPhase("idle");
+      setPostStatus(
+        shouldPostEns
+          ? "ENS transaction submitted. Track confirmation on Transactions."
+          : "",
+      );
+      if (shouldDownloadRegistration) {
+        downloadRegistrationInfo(encodedProof, {
+          ensName: shouldPostEns
+            ? proofMetadata.ens.trim() || encodedProof.ens?.trim() || ""
+            : "",
+          ensTransactionHash,
+          pacstacRegistration: registration,
+          postedToEns: shouldPostEns,
+          postedToPacStac: shouldPostPacStac,
+        });
+      }
+      trackEvent("create_post_success", {
+        ens_selected: shouldPostEns,
+        pacstac_selected: shouldPostPacStac,
+      });
+    } catch (error) {
+      const message = formatPostError(error);
+      setPostPhase("idle");
+      setPostStatus(message);
+      trackEvent("create_post_failed", { reason: message });
+    } finally {
+      setIsPostingProof(false);
     }
   }
 
@@ -783,18 +1052,28 @@ export function CreateWatermarkStudio() {
               >
                 <span aria-hidden="true">{isPlaybackPlaying ? "II" : "▶"}</span>
               </button>
-              <a
-                className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200"
-                download={encodedAudio.fileName}
-                href={encodedAudio.url}
-                onClick={() =>
-                  trackEvent("encoded_audio_download", {
-                    output_format: encodedAudio.format,
-                  })
-                }
-              >
-                Download
-              </a>
+              <div className="flex flex-wrap justify-end gap-2">
+                <a
+                  className="rounded-md border border-cyan-300/40 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:border-cyan-200 hover:bg-cyan-300/10 hover:text-white"
+                  download={encodedAudio.fileName}
+                  href={encodedAudio.url}
+                  onClick={() =>
+                    trackEvent("encoded_audio_download", {
+                      output_format: encodedAudio.format,
+                    })
+                  }
+                >
+                  Download
+                </a>
+                <button
+                  className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!encodedProof}
+                  onClick={handleOpenPostModal}
+                  type="button"
+                >
+                  Post
+                </button>
+              </div>
             </div>
           </div>
         ) : null}
@@ -851,12 +1130,342 @@ export function CreateWatermarkStudio() {
           </div>
         </div>
       ) : null}
+
+      {isPostModalOpen ? (
+        <PostProofModal
+          ensName={proofMetadata.ens || encodedProof?.ens || ""}
+          ensOptions={ensOptions}
+          ensSuccess={ensPostSuccess}
+          hash={postTransactionHash}
+          isEnsLoading={isEnsLoading}
+          isPosting={isPostingProof}
+          onClose={() => {
+            if (!isPostingProof) {
+              setIsPostModalOpen(false);
+            }
+          }}
+          onContinue={() => {
+            void handlePostProof();
+          }}
+          onEnsChange={(checked) => {
+            setShouldPostEns(checked);
+          }}
+          onEnsNameChange={(value) => {
+            didEditEnsRef.current = true;
+            setProofMetadata((metadata) => ({ ...metadata, ens: value }));
+          }}
+          onRegistrationDownloadChange={setShouldDownloadRegistration}
+          onPacStacChange={(checked) => {
+            setShouldPostPacStac(checked);
+            setPacStacPostSuccess(false);
+          }}
+          pacStacSuccess={pacStacPostSuccess}
+          phase={postPhase}
+          shouldDownloadRegistration={shouldDownloadRegistration}
+          shouldPostEns={shouldPostEns}
+          shouldPostPacStac={shouldPostPacStac}
+          status={postStatus}
+        />
+      ) : null}
     </div>
   );
 }
 
 function getUploadZoneSizeClass(isCompact: boolean) {
   return isCompact ? "min-h-24 p-4" : "min-h-44 p-6";
+}
+
+function PostProofModal({
+  ensName,
+  ensOptions,
+  ensSuccess,
+  hash,
+  isEnsLoading,
+  isPosting,
+  onClose,
+  onContinue,
+  onEnsChange,
+  onPacStacChange,
+  onEnsNameChange,
+  onRegistrationDownloadChange,
+  pacStacSuccess,
+  phase,
+  shouldDownloadRegistration,
+  shouldPostEns,
+  shouldPostPacStac,
+  status,
+}: {
+  ensName: string;
+  ensOptions: string[];
+  ensSuccess: boolean;
+  hash: Hash | null;
+  isEnsLoading: boolean;
+  isPosting: boolean;
+  onClose: () => void;
+  onContinue: () => void;
+  onEnsChange: (checked: boolean) => void;
+  onEnsNameChange: (value: string) => void;
+  onPacStacChange: (checked: boolean) => void;
+  onRegistrationDownloadChange: (checked: boolean) => void;
+  pacStacSuccess: boolean;
+  phase: PostPhase;
+  shouldDownloadRegistration: boolean;
+  shouldPostEns: boolean;
+  shouldPostPacStac: boolean;
+  status: string;
+}) {
+  const canContinue = !isPosting && (shouldPostPacStac || shouldPostEns);
+  const isSelectedFlowComplete =
+    (!shouldPostPacStac || pacStacSuccess) && (!shouldPostEns || ensSuccess);
+  const isManualEnsSelected =
+    !ensOptions.length || !ensOptions.includes(ensName.trim());
+  const phaseLabel =
+    phase === "idle"
+      ? ""
+      : getPostingStatusLabel(shouldPostPacStac, shouldPostEns);
+
+  return (
+    <div
+      aria-labelledby="post-proof-title"
+      aria-modal="true"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 backdrop-blur-sm"
+      role="dialog"
+    >
+      <div className="w-full max-w-md rounded-lg border border-cyan-300/20 bg-[#10161c] p-6 shadow-2xl shadow-cyan-950/40">
+        <div className="flex items-start justify-between gap-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+              Post proof
+            </p>
+          </div>
+          <button
+            className="rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isPosting}
+            onClick={onClose}
+            type="button"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3">
+          <label
+            className={
+              pacStacSuccess
+                ? "flex items-start gap-4 rounded-md border border-emerald-300/40 bg-emerald-400/15 p-4 shadow-lg shadow-emerald-950/30"
+                : "flex items-start gap-3 rounded-md border border-white/10 bg-zinc-950/60 p-4"
+            }
+          >
+            <input
+              checked={shouldPostPacStac}
+              className={pacStacSuccess ? "sr-only" : "mt-1 h-4 w-4 accent-cyan-300"}
+              disabled={isPosting}
+              onChange={(event) => onPacStacChange(event.target.checked)}
+              type="checkbox"
+            />
+            {pacStacSuccess ? (
+              <span
+                aria-hidden="true"
+                className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-emerald-300 text-3xl font-bold text-emerald-950"
+              >
+                ✓
+              </span>
+            ) : null}
+            <span>
+              <span
+                className={
+                  pacStacSuccess
+                    ? "block text-base font-semibold text-emerald-50"
+                    : "block text-sm font-semibold text-white"
+                }
+              >
+                {pacStacSuccess ? "PacStac registration complete" : "PacStac"}
+              </span>
+              <span
+                className={
+                  pacStacSuccess
+                    ? "mt-1 block text-sm leading-6 text-emerald-100"
+                    : "mt-1 block text-sm leading-6 text-zinc-400"
+                }
+              >
+                {pacStacSuccess ? (
+                  <>
+                    The signed proof is registered and ready for discovery.{" "}
+                    <a
+                      className="font-semibold text-emerald-50 underline decoration-emerald-200/60 underline-offset-4 transition hover:decoration-emerald-50"
+                      href="https://pacstac.com/?utm_source=sonosig&utm_medium=create_post_modal&utm_campaign=audio_provenance"
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      View on PacStac
+                    </a>
+                  </>
+                ) : (
+                  "Register the signed proof so agents and apps can discover the claim ID."
+                )}
+              </span>
+            </span>
+          </label>
+
+          <label
+            className={
+              ensSuccess
+                ? "flex items-start gap-4 rounded-md border border-emerald-300/40 bg-emerald-400/15 p-4 shadow-lg shadow-emerald-950/30"
+                : "flex items-start gap-3 rounded-md border border-white/10 bg-zinc-950/60 p-4"
+            }
+          >
+            <input
+              checked={shouldPostEns}
+              className={ensSuccess ? "sr-only" : "mt-1 h-4 w-4 accent-cyan-300"}
+              disabled={isPosting}
+              onChange={(event) => onEnsChange(event.target.checked)}
+              type="checkbox"
+            />
+            {ensSuccess ? (
+              <span
+                aria-hidden="true"
+                className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-emerald-300 text-3xl font-bold text-emerald-950"
+              >
+                ✓
+              </span>
+            ) : null}
+            <span>
+              <span
+                className={
+                  ensSuccess
+                    ? "block text-base font-semibold text-emerald-50"
+                    : "block text-sm font-semibold text-white"
+                }
+              >
+                {ensSuccess ? "ENS registration complete" : "ENS"}
+              </span>
+              <span
+                className={
+                  ensSuccess
+                    ? "mt-1 block text-sm leading-6 text-emerald-100"
+                    : "mt-1 block text-sm leading-6 text-zinc-400"
+                }
+              >
+                {ensSuccess
+                  ? "The ENS text record is updated on Ethereum mainnet."
+                  : (
+                      <>
+                        Write the PacStac claim pointer to the `com.sonosig` text record
+                        {ensName.trim()
+                          ? ` for ${ensName.trim()}.`
+                          : ". Add an ENS name in settings before continuing."}
+                      </>
+                    )}
+              </span>
+              {shouldPostEns && !ensSuccess ? (
+                <div className="mt-4 grid gap-3">
+                  {ensOptions.length ? (
+                    <select
+                      className="w-full rounded-md border border-white/15 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-cyan-300"
+                      disabled={isPosting}
+                      onChange={(event) => {
+                        onEnsNameChange(
+                          event.target.value === "__manual__"
+                            ? ""
+                            : event.target.value,
+                        );
+                      }}
+                      value={
+                        ensOptions.includes(ensName.trim())
+                          ? ensName.trim()
+                          : "__manual__"
+                      }
+                    >
+                      {ensOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                      <option value="__manual__">Manual ENS name</option>
+                    </select>
+                  ) : null}
+                  {isManualEnsSelected ? (
+                    <input
+                      className="w-full rounded-md border border-white/15 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-600 focus:border-cyan-300"
+                      disabled={isPosting}
+                      onChange={(event) => onEnsNameChange(event.target.value)}
+                      placeholder={isEnsLoading ? "Loading ENS names..." : "name.eth"}
+                      value={ensName}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-md border border-white/10 bg-zinc-950/60 p-4">
+            <input
+              checked={shouldDownloadRegistration}
+              className="mt-1 h-4 w-4 accent-cyan-300"
+              disabled={isPosting}
+              onChange={(event) =>
+                onRegistrationDownloadChange(event.target.checked)
+              }
+              type="checkbox"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-white">
+                Download Registration
+              </span>
+              <span className="mt-1 block text-sm leading-6 text-zinc-400">
+                Save a local JSON receipt with the proof.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        {phaseLabel ? (
+          <div className="mt-5 rounded-md border border-cyan-300/20 bg-cyan-300/5 p-4">
+            <p className="text-sm font-semibold text-cyan-100">{phaseLabel}</p>
+            {phase === "submitted" ? (
+              <p className="mt-2 text-sm leading-6 text-zinc-400">
+                SonoSig recorded the submitted transaction. Confirmation and failures are tracked on Transactions.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {hash ? (
+          <a
+            className="mt-4 block break-all rounded-md border border-white/10 bg-black/35 px-3 py-3 font-mono text-xs text-cyan-100 transition hover:border-cyan-300/40"
+            href={`https://etherscan.io/tx/${hash}`}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {hash}
+          </a>
+        ) : null}
+
+        {status ? (
+          <p className="mt-5 text-sm leading-6 text-zinc-300">{status}</p>
+        ) : null}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            className="rounded-md border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isPosting}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canContinue}
+            onClick={onContinue}
+            type="button"
+          >
+            {isPosting ? "Posting..." : isSelectedFlowComplete ? "Done" : "Continue"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function EmbeddingVisualization({
@@ -1658,6 +2267,376 @@ function createWaveformPeaks(audioBuffer: AudioBuffer) {
 
   const maxPeak = Math.max(...peaks);
   return peaks.map((peak) => peak / maxPeak);
+}
+
+async function registerPacStacClaim(proof: ProofPayload) {
+  const response = await fetch("/api/pacstac/sonosig/claims", {
+    body: JSON.stringify({ proof }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  const responseBody = (await response.json()) as
+    | PacStacRegistration
+    | { error?: string; pacstac?: unknown };
+
+  if (!response.ok) {
+    const message =
+      "error" in responseBody && responseBody.error
+        ? responseBody.error
+        : "Unable to register PacStac claim.";
+
+    throw new Error(message);
+  }
+
+  return responseBody as PacStacRegistration;
+}
+
+function storePacStacRegistration(
+  proof: ProofPayload | null,
+  registration: PacStacRegistration,
+) {
+  if (typeof window === "undefined" || !proof) {
+    return;
+  }
+
+  localStorage.setItem(
+    "sonosig:last-pacstac-registration",
+    JSON.stringify({
+      proofAudioHash: proof.audio_hash,
+      registration,
+    }),
+  );
+  upsertPacStacRegistrationTransaction({
+    claimId: registration.claimId,
+    createdAt: registration.createdAt,
+    idempotent: registration.idempotent,
+    namespace: registration.namespace,
+    proofAudioHash: proof.audio_hash,
+    registrationStatus: registration.status,
+    wallet: registration.wallet ?? proof.wallet,
+  });
+}
+
+function getStoredPacStacRegistration(proof: ProofPayload | null) {
+  if (typeof window === "undefined" || !proof) {
+    return null;
+  }
+
+  const storedRegistration = localStorage.getItem(
+    "sonosig:last-pacstac-registration",
+  );
+
+  if (!storedRegistration) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(storedRegistration) as {
+      proofAudioHash?: string;
+      registration?: PacStacRegistration;
+    };
+
+    if (parsed.proofAudioHash !== proof.audio_hash) {
+      return null;
+    }
+
+    return parsed.registration ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getPostingStatusLabel(shouldPostPacStac: boolean, shouldPostEns: boolean) {
+  if (shouldPostPacStac && shouldPostEns) {
+    return "Registering with PacStac and ENS";
+  }
+
+  if (shouldPostEns) {
+    return "Registering with ENS";
+  }
+
+  return "Registering with PacStac";
+}
+
+function downloadRegistrationInfo(
+  proof: ProofPayload,
+  registration: {
+    ensName: string;
+    ensTransactionHash: Hash | null;
+    pacstacRegistration: PacStacRegistration | null;
+    postedToEns: boolean;
+    postedToPacStac: boolean;
+  },
+) {
+  const body = {
+    generatedAt: new Date().toISOString(),
+    proof,
+    registration,
+  };
+  const blob = new Blob([JSON.stringify(body, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const safeName =
+    proof.sourceFileName?.replace(/\.[^.]+$/, "").replace(/[^a-z0-9._-]+/gi, "-") ||
+    "sonosig-proof";
+
+  link.download = `${safeName}-registration.json`;
+  link.href = url;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function storeSubmittedEnsTransaction({
+  claimId,
+  ensName,
+  hash,
+  proof,
+}: {
+  claimId: string;
+  ensName: string;
+  hash: Hash;
+  proof: ProofPayload;
+}) {
+  const now = new Date().toISOString();
+
+  upsertWeb3Transaction({
+    chainId: mainnet.id,
+    claimId,
+    createdAt: now,
+    ensName,
+    hash,
+    id: createWeb3TransactionId(hash),
+    network: "Ethereum mainnet",
+    proofAudioHash: proof.audio_hash,
+    status: "submitted",
+    title: "ENS text record update",
+    type: "ens-text-record",
+    updatedAt: now,
+    wallet: proof.wallet,
+  });
+}
+
+async function monitorSubmittedEnsTransaction(
+  client: MainnetReceiptClient,
+  hash: Hash,
+) {
+  const transactionId = createWeb3TransactionId(hash);
+
+  try {
+    const receipt = await waitForMainnetReceipt(client, hash);
+
+    if (receipt.status === "success") {
+      updateWeb3Transaction(transactionId, { status: "confirmed" });
+      trackEvent("create_post_ens_confirmed");
+      return;
+    }
+
+    updateWeb3Transaction(transactionId, {
+      error: "The ENS transaction was mined but reverted.",
+      status: "failed",
+    });
+    trackEvent("create_post_ens_failed", { reason: "reverted" });
+  } catch (error) {
+    updateWeb3Transaction(transactionId, {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unable to confirm the ENS transaction.",
+      status: "submitted",
+    });
+    trackEvent("create_post_ens_failed", {
+      reason: error instanceof Error ? error.message : "unknown",
+    });
+  }
+}
+
+function addEnsOption(options: string[], value: string | null | undefined) {
+  if (!value) {
+    return;
+  }
+
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return;
+  }
+
+  if (
+    options.some(
+      (option) => option.toLowerCase() === normalizedValue.toLowerCase(),
+    )
+  ) {
+    return;
+  }
+
+  options.push(normalizedValue);
+}
+
+async function getEnsResolverAddress(
+  name: string,
+  publicClient: EnsResolverClient | undefined,
+) {
+  try {
+    const response = await fetch(
+      `/api/ens/resolver?name=${encodeURIComponent(name)}`,
+    );
+
+    if (response.ok) {
+      const body = (await response.json()) as { resolver?: string };
+
+      if (body.resolver && isAddress(body.resolver)) {
+        return body.resolver;
+      }
+    }
+
+    if (response.status === 404) {
+      return null;
+    }
+  } catch {
+    // Fall back to browser RPC below.
+  }
+
+  try {
+    return (await publicClient?.getEnsResolver({ name })) ?? null;
+  } catch {
+    throw new Error(
+      "The ENS network request failed before the wallet could open. Try again, or update the com.sonosig text record manually in ENS Manager.",
+    );
+  }
+}
+
+async function waitForMainnetReceipt(client: MainnetReceiptClient, hash: Hash) {
+  const watchedReceipt = client
+    .waitForTransactionReceipt({ hash })
+    .catch(() => null);
+  const polledReceipt = pollMainnetReceipt(client, hash);
+
+  return await Promise.race([watchedReceipt, polledReceipt]).then(
+    async (receipt) => receipt ?? polledReceipt,
+  );
+}
+
+async function pollMainnetReceipt(client: MainnetReceiptClient, hash: Hash) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < 300_000) {
+    try {
+      return await withTimeout(client.getTransactionReceipt({ hash }), 10_000);
+    } catch {
+      await delay(4_000);
+    }
+  }
+
+  throw new Error(
+    "SonoSig could not confirm the transaction receipt. Check Etherscan for the final status.",
+  );
+}
+
+function withTimeout<T>(promise: Promise<T>, milliseconds: number) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error("Timed out waiting for the Ethereum RPC response."));
+    }, milliseconds);
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
+        window.clearTimeout(timer);
+      });
+  });
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
+function formatPostError(error: unknown) {
+  const message = getErrorMessage(error);
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    normalizedMessage.includes("user rejected") ||
+    normalizedMessage.includes("user denied") ||
+    normalizedMessage.includes("rejected the request")
+  ) {
+    return "ENS update cancelled. No record was changed.";
+  }
+
+  if (
+    normalizedMessage.includes("insufficient funds") ||
+    normalizedMessage.includes("exceeds the balance")
+  ) {
+    return "The wallet does not have enough ETH on mainnet to update this ENS record.";
+  }
+
+  if (
+    normalizedMessage.includes("unauthorized") ||
+    normalizedMessage.includes("not authorised") ||
+    normalizedMessage.includes("not authorized") ||
+    normalizedMessage.includes("reverted") ||
+    normalizedMessage.includes("execution reverted")
+  ) {
+    return "The ENS resolver rejected the update. Connect the wallet that owns or manages this ENS name, or update the record manually in ENS Manager.";
+  }
+
+  if (
+    normalizedMessage.includes("wrong network") ||
+    normalizedMessage.includes("chain mismatch") ||
+    normalizedMessage.includes("switch chain")
+  ) {
+    return "Switch to Ethereum mainnet to update this ENS record.";
+  }
+
+  const cleanedMessage = message
+    .split("Raw Call Arguments")[0]
+    .split("Request Arguments")[0]
+    .split("Contract Call")[0]
+    .trim();
+
+  return cleanedMessage
+    ? truncateEnd(cleanedMessage, 160)
+    : "Unable to post this proof.";
+}
+
+function getErrorMessage(error: unknown) {
+  if (typeof error === "object" && error) {
+    const maybeError = error as {
+      details?: unknown;
+      message?: unknown;
+      shortMessage?: unknown;
+    };
+
+    if (typeof maybeError.shortMessage === "string") {
+      return maybeError.shortMessage;
+    }
+
+    if (typeof maybeError.details === "string") {
+      return maybeError.details;
+    }
+
+    if (typeof maybeError.message === "string") {
+      return maybeError.message;
+    }
+  }
+
+  return "Unable to post this proof.";
+}
+
+function truncateEnd(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}...`;
 }
 
 function nextFrame() {

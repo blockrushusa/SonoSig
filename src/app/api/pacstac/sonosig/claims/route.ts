@@ -1,4 +1,9 @@
+import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
+import { ExactEvmScheme } from "@x402/evm";
+import { privateKeyToAccount } from "viem/accounts";
 import { buildSiweMessage, type ProofPayload } from "@/lib/audio-watermark";
+import { getAdminApiConfig, type PacStacApiMode } from "@/lib/admin-api-config";
+import { getPrivateKeyFromEnv } from "@/lib/admin-wallet-status";
 
 export const runtime = "nodejs";
 
@@ -27,6 +32,15 @@ type PacStacClaimPayload = {
 
 type RegisterClaimBody = {
   proof?: ProofPayload;
+};
+
+type PacStacRequestBody = {
+  payload: PacStacClaimPayload;
+  siweMessage: string;
+  source: {
+    app: "sonosig";
+    origin: string;
+  };
 };
 
 const PACSTAC_CLAIMS_URL =
@@ -150,12 +164,6 @@ function toPacStacPayload(proof: ProofPayload): PacStacClaimPayload {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.PACSTAC_API_KEY;
-
-  if (!apiKey) {
-    return jsonError("PACSTAC_API_KEY is not configured.", 500);
-  }
-
   let body: RegisterClaimBody;
 
   try {
@@ -182,21 +190,31 @@ export async function POST(request: Request) {
   }
 
   const origin = new URL(request.url).origin;
-  const pacstacResponse = await fetch(PACSTAC_CLAIMS_URL, {
-    body: JSON.stringify({
-      payload,
-      siweMessage,
-      source: {
-        app: "sonosig",
-        origin,
-      },
-    }),
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const requestBody: PacStacRequestBody = {
+    payload,
+    siweMessage,
+    source: {
+      app: "sonosig",
+      origin,
     },
-    method: "POST",
-  });
+  };
+
+  let pacstacResponse: Response;
+
+  try {
+    const config = await getAdminApiConfig();
+    pacstacResponse = await postPacStacClaim(
+      config.pacstacApiMode,
+      requestBody,
+    );
+  } catch (error) {
+    return jsonError(
+      error instanceof Error
+        ? error.message
+        : "PacStac API mode is not configured.",
+      500,
+    );
+  }
 
   const responseText = await pacstacResponse.text();
   let responseBody: unknown = null;
@@ -220,4 +238,59 @@ export async function POST(request: Request) {
   }
 
   return Response.json(responseBody);
+}
+
+async function postPacStacClaim(
+  apiMode: PacStacApiMode,
+  body: PacStacRequestBody,
+) {
+  if (apiMode === "x402") {
+    return await postPacStacClaimWithX402(body);
+  }
+
+  return await postPacStacClaimWithApiKey(body);
+}
+
+async function postPacStacClaimWithApiKey(body: PacStacRequestBody) {
+  const apiKey = process.env.PACSTAC_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("PACSTAC_API_KEY is not configured.");
+  }
+
+  return await fetch(PACSTAC_CLAIMS_URL, {
+    body: JSON.stringify(body),
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+}
+
+async function postPacStacClaimWithX402(body: PacStacRequestBody) {
+  const privateKey = getPrivateKeyFromEnv("BASE_X402_WALLET_PRIVATE_KEY");
+
+  if (!privateKey) {
+    throw new Error("BASE_X402_WALLET_PRIVATE_KEY is not configured.");
+  }
+
+  const account = privateKeyToAccount(privateKey);
+  const fetchWithPayment = wrapFetchWithPaymentFromConfig(fetch, {
+    schemes: [
+      {
+        client: new ExactEvmScheme(account),
+        network: "eip155:8453",
+      },
+    ],
+  });
+
+  return await fetchWithPayment(PACSTAC_CLAIMS_URL, {
+    body: JSON.stringify(body),
+    headers: {
+      "Content-Type": "application/json",
+      "X-SonoSig-PacStac-Mode": "x402",
+    },
+    method: "POST",
+  });
 }

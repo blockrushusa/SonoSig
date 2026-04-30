@@ -15,23 +15,26 @@ const navItems = [
 
 const publicMenuItems = [
   { href: "/about", label: "About" },
-  { href: "/docs", label: "Docs" },
+  { href: "/developer/encoding", label: "Docs" },
   { href: "/faq", label: "FAQ" },
   { href: "/help", label: "Help" },
   { href: "/contact", label: "Contact" },
 ];
 
 const userMenuItems = [
+  { href: "/transactions", label: "Transactions" },
   { href: "/profile", label: "Profile" },
   { href: "/tools", label: "Tools" },
 ];
 
 const developerNavItems = [
   { href: "/developer", label: "Overview" },
+  { href: "/developer/encoding", label: "Encoding" },
   { href: "/developer/mcp", label: "MCP" },
 ];
 
 const adminNavItems = [
+  { href: "/admin/api-config", label: "API config" },
   { href: "/admin/user-management", label: "User management" },
   { href: "/admin/wallet", label: "Wallets" },
   { href: "/admin/site", label: "Site" },

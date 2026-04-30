@@ -11,13 +11,13 @@ export default function Home() {
         <div className="mx-auto grid w-full max-w-7xl items-center gap-14 lg:grid-cols-[minmax(0,680px)_minmax(340px,480px)] lg:justify-center lg:gap-10">
           <div className="max-w-[680px]">
             <p className="mb-5 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200/70">
-              Wallet-signed audio provenance
+              Sort the slop
             </p>
             <h2 className="max-w-[13.5ch] text-[clamp(2.75rem,4.6vw,5.25rem)] font-semibold leading-[1] tracking-normal text-white">
               Sign the sound.
             </h2>
             <p className="mt-7 max-w-[620px] text-base leading-7 text-zinc-300 sm:text-lg sm:leading-8">
-              Agent-accessible identity and proof system for audio files. Works with{" "}
+              Agent-accessible identity and trust system for media. Works with{" "}
               <a
                 className="text-inherit underline decoration-cyan-300/50 underline-offset-4 transition hover:decoration-cyan-200"
                 href="https://pacstac.com/?utm_source=sonosig&utm_medium=homepage&utm_campaign=audio_provenance"
@@ -35,8 +35,8 @@ export default function Home() {
               >
                 ENS
               </a>{" "}
-              to provide portable provenance, public discovery, indexed claims,
-              and agentic access assets you steward.
+              to provide instant trust for agents, portable provenance, public
+              discovery, and agentic access assets you steward.
             </p>
             <HomeStartButton />
           </div>

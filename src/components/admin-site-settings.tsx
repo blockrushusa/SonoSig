@@ -259,6 +259,19 @@ export function AdminSiteSettings() {
                 }))
               }
             />
+            <ToggleField
+              checked={logo.autoResetEnabled}
+              label="Auto-reset logo"
+              onChange={(checked) =>
+                setSettings((current) => ({
+                  ...current,
+                  homeLogo: {
+                    ...current.homeLogo,
+                    autoResetEnabled: checked,
+                  },
+                }))
+              }
+            />
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
@@ -310,6 +323,14 @@ export function AdminSiteSettings() {
               step={1}
               value={logo.haloFadeDurationSeconds}
             />
+            <RangeField
+              label="Auto-reset interval"
+              max={120}
+              min={5}
+              onChange={(value) => updateLogoNumber("autoResetIntervalSeconds", value)}
+              step={1}
+              value={logo.autoResetIntervalSeconds}
+            />
           </div>
         </section>
       </div>
@@ -318,6 +339,7 @@ export function AdminSiteSettings() {
 
   function updateLogoNumber(
     key:
+      | "autoResetIntervalSeconds"
       | "initialScatter"
       | "initialVelocityX"
       | "initialVelocityY"

@@ -2,6 +2,18 @@
 
 Next.js application bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Tech Stack
+
+- **App framework:** Next.js 16 App Router with React 19 and TypeScript.
+- **Styling:** Tailwind CSS 4 with component-level utility classes in `src/components`.
+- **Authentication and data:** Firebase Authentication, Firebase Admin SDK, and Cloud Firestore for user/admin data and app settings.
+- **Wallet integration:** RainbowKit, wagmi, and viem for wallet connection, SIWE signatures, ENS reads/writes, transaction receipts, and EVM utilities.
+- **Audio proof engine:** Browser-side audio decoding, metadata extraction, waveform generation, SONOSIG1 payload embedding, and verification in `src/lib/audio-watermark.ts` and related components.
+- **Provenance services:** PacStac claim registration, ENS `com.sonosig` text-record publishing, and local web3 transaction history for verification status.
+- **x402 payments:** `@x402/fetch` and `@x402/evm` support paid PacStac API access through the Base x402 wallet.
+- **Agent integration:** Model Context Protocol server in `scripts/sonosig-mcp-server.mjs` for encode, verify, PacStac registration, and ENS workflows.
+- **Deployment and ops:** Firebase App Hosting, Firebase CLI scripts, Firestore rules deployment, and Porkbun DNS sync scripts.
+
 ## Getting Started
 
 First, run the development server:
@@ -16,7 +28,7 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3050](http://localhost:3050) with your browser to see the result.
 
 You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
 

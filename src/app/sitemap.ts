@@ -9,11 +9,11 @@ const routes: Array<{
 }> = [
   { path: "", changeFrequency: "weekly", priority: 1 },
   { path: "/about", changeFrequency: "monthly", priority: 0.8 },
-  { path: "/docs", changeFrequency: "monthly", priority: 0.8 },
   { path: "/faq", changeFrequency: "monthly", priority: 0.8 },
   { path: "/help", changeFrequency: "monthly", priority: 0.7 },
   { path: "/contact", changeFrequency: "monthly", priority: 0.6 },
   { path: "/developer", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/developer/encoding", changeFrequency: "monthly", priority: 0.8 },
   { path: "/developer/mcp", changeFrequency: "monthly", priority: 0.7 },
 ];
 

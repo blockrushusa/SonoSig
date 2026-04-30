@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 type UserRow = {
   uid: string;
   email: string | null;
+  createdAt: string | null;
   displayName: string | null;
   disabled: boolean;
   isAdmin: boolean;
@@ -57,6 +58,7 @@ function toUserRow(user: Awaited<ReturnType<typeof adminAuth.listUsers>>["users"
   return {
     uid: user.uid,
     email,
+    createdAt: user.metadata.creationTime ?? null,
     displayName: user.displayName ?? null,
     disabled: user.disabled,
     isAdmin: role === "admin",

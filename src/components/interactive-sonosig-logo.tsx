@@ -169,6 +169,13 @@ export function InteractiveSonoSigLogo() {
       const logoSettings = settingsRef.current.homeLogo;
       const now = performance.now();
       const elapsedSeconds = (now - startTime) / 1000;
+      if (
+        logoSettings.autoResetEnabled &&
+        !reducedMotion &&
+        elapsedSeconds >= logoSettings.autoResetIntervalSeconds
+      ) {
+        rebuild();
+      }
       const shadowOpacity =
         logoSettings.haloFadeEnabled && !reducedMotion
           ? Math.max(
@@ -346,8 +353,26 @@ export function InteractiveSonoSigLogo() {
       reducedMotion = event.matches;
     }
 
+    function resetInteractionState() {
+      motionFieldRef.current = { vx: 0, vy: 0 };
+      pointerRef.current = {
+        active: false,
+        hold: 0,
+        holding: false,
+        lastTime: 0,
+        lastX: 0,
+        lastY: 0,
+        pulse: 0,
+        pulseX: 0,
+        pulseY: 0,
+        x: 0,
+        y: 0,
+      };
+    }
+
     function rebuild() {
       startTime = performance.now();
+      resetInteractionState();
       resizeCanvas();
       const image = new Image();
       image.decoding = "async";

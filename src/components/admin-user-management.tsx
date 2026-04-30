@@ -7,6 +7,7 @@ import { useAuthUser } from "@/lib/firebase/use-auth-user";
 type AdminUser = {
   uid: string;
   email: string | null;
+  createdAt: string | null;
   displayName: string | null;
   disabled: boolean;
   isAdmin: boolean;
@@ -54,6 +55,7 @@ export function AdminUserManagement() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [openRoleMenuUid, setOpenRoleMenuUid] = useState<string | null>(null);
   const [updatingUid, setUpdatingUid] = useState<string | null>(null);
 
   const sortedUsers = useMemo(
@@ -137,6 +139,7 @@ export function AdminUserManagement() {
 
         return [...nextUsers, updatedUser];
       });
+      setOpenRoleMenuUid(null);
       setEmail("");
       setNewUserRole("verified");
       setStatus(`${getUserLabel(updatedUser)} role updated to ${formatRole(updatedUser.role)}.`);
@@ -282,36 +285,37 @@ export function AdminUserManagement() {
                     <p className="mt-1 truncate text-xs text-zinc-500">
                       {siteUser.uid}
                     </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <RoleBadge role={siteUser.role} />
-                      {siteUser.isBootstrapAdmin ? (
-                        <span className="rounded border border-amber-300/30 px-2 py-1 text-xs font-semibold text-amber-200">
-                          Bootstrap
-                        </span>
-                      ) : null}
-                      {siteUser.disabled ? (
-                        <span className="rounded border border-red-300/30 px-2 py-1 text-xs font-semibold text-red-200">
-                          Disabled
-                        </span>
-                      ) : null}
+                    <div className="mt-3 grid gap-2">
+                      <p className="text-xs font-medium text-zinc-400">
+                        Signed up {formatSignedUpAt(siteUser.createdAt)}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <RoleBadge role={siteUser.role} />
+                        {siteUser.isBootstrapAdmin ? (
+                          <span className="rounded border border-amber-300/30 px-2 py-1 text-xs font-semibold text-amber-200">
+                            Bootstrap
+                          </span>
+                        ) : null}
+                        {siteUser.disabled ? (
+                          <span className="rounded border border-red-300/30 px-2 py-1 text-xs font-semibold text-red-200">
+                            Disabled
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
 
-                  <select
-                    className="rounded-md border border-white/15 bg-zinc-950 px-3 py-2 text-sm font-semibold text-white outline-none transition focus:border-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={
-                      updatingUid !== null ||
-                      siteUser.isBootstrapAdmin
+                  <RoleActionMenu
+                    disabled={updatingUid !== null || siteUser.isBootstrapAdmin}
+                    isOpen={openRoleMenuUid === siteUser.uid}
+                    onOpenChange={(isOpen) =>
+                      setOpenRoleMenuUid(isOpen ? siteUser.uid : null)
                     }
-                    onChange={(event) =>
-                      void setUserRole(siteUser, event.target.value as UserRole)
-                    }
-                    value={siteUser.role}
-                  >
-                    <option value="new">New user</option>
-                    <option value="verified">Verified user</option>
-                    <option value="admin">Admin</option>
-                  </select>
+                    onRoleSelect={(role) => {
+                      void setUserRole(siteUser, role);
+                    }}
+                    role={siteUser.role}
+                  />
                 </div>
               ))}
             </div>
@@ -332,6 +336,86 @@ function formatRole(role: UserRole) {
   }
 
   return "New user";
+}
+
+function formatSignedUpAt(value: string | null) {
+  if (!value) {
+    return "unknown";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "unknown";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function RoleActionMenu({
+  disabled,
+  isOpen,
+  onOpenChange,
+  onRoleSelect,
+  role,
+}: {
+  disabled: boolean;
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  onRoleSelect: (role: UserRole) => void;
+  role: UserRole;
+}) {
+  return (
+    <div className="relative justify-self-start md:justify-self-end">
+      <button
+        aria-expanded={isOpen}
+        aria-label="Change user role"
+        className="grid h-10 w-10 place-items-center rounded-md border border-white/15 text-zinc-200 transition hover:border-cyan-300/60 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={disabled}
+        onClick={() => onOpenChange(!isOpen)}
+        title="Change role"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+        >
+          <path d="M12 20h9" />
+          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+        </svg>
+      </button>
+
+      {isOpen ? (
+        <div className="absolute right-auto top-full z-20 mt-2 grid min-w-44 gap-1 rounded-md border border-white/10 bg-[#11161d] p-2 shadow-2xl shadow-black/40 md:right-0 md:left-auto">
+          {(["new", "verified", "admin"] as const).map((option) => (
+            <button
+              aria-current={role === option ? "true" : undefined}
+              className={
+                role === option
+                  ? "rounded bg-cyan-300 px-3 py-2 text-left text-sm font-semibold text-zinc-950"
+                  : "rounded px-3 py-2 text-left text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
+              }
+              key={option}
+              onClick={() => onRoleSelect(option)}
+              type="button"
+            >
+              {formatRole(option)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function RoleBadge({ role }: { role: UserRole }) {

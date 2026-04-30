@@ -18,6 +18,7 @@ import {
 } from "@/components/proof-details-tabs";
 import { trackEvent } from "@/lib/analytics";
 import type { ProofPayload } from "@/lib/audio-watermark";
+import { upsertPacStacRegistrationTransaction } from "@/lib/web3-transactions";
 
 const ENS_TEXT_ABI = [
   {
@@ -979,6 +980,15 @@ function storePacStacRegistration(
       registration,
     }),
   );
+  upsertPacStacRegistrationTransaction({
+    claimId: registration.claimId,
+    createdAt: registration.createdAt,
+    idempotent: registration.idempotent,
+    namespace: registration.namespace,
+    proofAudioHash: proof.audio_hash,
+    registrationStatus: registration.status,
+    wallet: registration.wallet ?? proof.wallet,
+  });
 }
 
 function addEnsOption(options: string[], value: string | null | undefined) {
