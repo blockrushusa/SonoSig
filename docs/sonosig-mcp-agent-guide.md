@@ -214,7 +214,7 @@ Input:
 
 ```json
 {
-  "claimId": "sonosig:sha256:..."
+  "wallet": "0x1234567890abcdef1234567890abcdef12345678"
 }
 ```
 
@@ -223,7 +223,7 @@ Output:
 ```json
 {
   "key": "com.sonosig",
-  "value": "{\"v\":1,\"latest\":\"sonosig:sha256:...\"}"
+  "value": "pacstac:wallet:0x1234567890abcdef1234567890abcdef12345678"
 }
 ```
 
@@ -231,7 +231,7 @@ Agent notes:
 
 - Prefer this tool before any on-chain action.
 - Use it when a user wants to manually update ENS through ENS Manager.
-- SonoSig proofs do not contain a PacStac claim ID by default, so pass `claimId` explicitly unless reading from a proof object that already has `pacstacClaimId`.
+- The record points to a PacStac wallet collection, not one song. Pass `wallet`, `proof`, `proofPath`, or `inputPath` so the tool can resolve the creator wallet.
 
 ### `sonosig_submit_ens`
 
@@ -242,7 +242,7 @@ Input:
 ```json
 {
   "ensName": "example.eth",
-  "claimId": "sonosig:sha256:...",
+  "wallet": "0x1234567890abcdef1234567890abcdef12345678",
   "confirm": true
 }
 ```
@@ -293,11 +293,11 @@ Agent notes:
 
 ### Prepare ENS without sending a transaction
 
-1. Confirm the PacStac claim ID.
+1. Confirm the creator wallet address for the PacStac collection.
 2. Call `sonosig_prepare_ens_record`.
 3. Give the user the key/value pair:
    - key: `com.sonosig`
-   - value: `{"v":1,"latest":"..."}`
+   - value: `pacstac:wallet:0x...`
 
 ### Submit ENS on-chain
 

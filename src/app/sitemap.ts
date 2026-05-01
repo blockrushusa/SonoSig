@@ -14,8 +14,10 @@ const routes: Array<{
   { path: "/support", changeFrequency: "weekly", priority: 0.8 },
   { path: "/contact", changeFrequency: "monthly", priority: 0.6 },
   { path: "/terms", changeFrequency: "monthly", priority: 0.5 },
+  { path: "/docs", changeFrequency: "monthly", priority: 0.8 },
+  { path: "/docs/encoding", changeFrequency: "monthly", priority: 0.8 },
+  { path: "/docs/ens", changeFrequency: "monthly", priority: 0.8 },
   { path: "/developer", changeFrequency: "monthly", priority: 0.7 },
-  { path: "/developer/encoding", changeFrequency: "monthly", priority: 0.8 },
   { path: "/developer/mcp", changeFrequency: "monthly", priority: 0.7 },
 ];
 

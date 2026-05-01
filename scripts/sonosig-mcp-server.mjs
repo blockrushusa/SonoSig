@@ -148,29 +148,33 @@ server.registerTool(
   "sonosig_prepare_ens_record",
   {
     description:
-      "Build the compact ENS text record SonoSig uses: com.sonosig = {v, latest}.",
+      "Build the ENS text record SonoSig uses: com.sonosig = pacstac:wallet:<wallet>.",
     inputSchema: {
       claimId: z
         .string()
         .optional()
-        .describe("PacStac claim ID, e.g. sonosig:sha256:<hash>."),
+        .describe("Deprecated. ENS now points to the PacStac wallet collection, not one claim."),
       inputPath: z
         .string()
         .optional()
-        .describe("Optional encoded audio file path to read a stored claim ID from."),
+        .describe("Optional encoded audio file path to read the signing wallet from."),
       proof: z.unknown().optional().describe("Optional proof payload."),
       proofPath: z
         .string()
         .optional()
         .describe("Optional proof JSON path."),
+      wallet: z
+        .string()
+        .optional()
+        .describe("Wallet address for the PacStac collection pointer."),
     },
   },
-  async ({ claimId, inputPath, proof, proofPath }) => {
-    const latest = await resolveClaimId({ claimId, inputPath, proof, proofPath });
+  async ({ inputPath, proof, proofPath, wallet }) => {
+    const ownerWallet = await resolveWalletAddress({ inputPath, proof, proofPath, wallet });
 
     return jsonToolResult({
       key: SONOSIG_ENS_RECORD_KEY,
-      value: JSON.stringify({ v: 1, latest }),
+      value: buildPacStacWalletPointer(ownerWallet),
     });
   },
 );
@@ -184,7 +188,7 @@ server.registerTool(
       claimId: z
         .string()
         .optional()
-        .describe("PacStac claim ID, e.g. sonosig:sha256:<hash>."),
+        .describe("Deprecated. ENS now points to the PacStac wallet collection, not one claim."),
       confirm: z
         .boolean()
         .describe("Must be true to send an onchain ENS transaction."),
@@ -198,15 +202,19 @@ server.registerTool(
         .string()
         .optional()
         .describe("Optional proof JSON path."),
+      wallet: z
+        .string()
+        .optional()
+        .describe("Wallet address for the PacStac collection pointer."),
     },
   },
-  async ({ claimId, confirm, ensName, inputPath, proof, proofPath }) => {
+  async ({ confirm, ensName, inputPath, proof, proofPath, wallet }) => {
     if (!confirm) {
       throw new Error("confirm=true is required before sending an ENS transaction.");
     }
 
-    const latest = await resolveClaimId({ claimId, inputPath, proof, proofPath });
-    const value = JSON.stringify({ v: 1, latest });
+    const ownerWallet = await resolveWalletAddress({ inputPath, proof, proofPath, wallet });
+    const value = buildPacStacWalletPointer(ownerWallet);
     const result = await submitEnsRecord({ ensName, value });
 
     return jsonToolResult({
@@ -630,22 +638,32 @@ async function getEnsResolver(name) {
   return resolver && isAddress(resolver) ? resolver : null;
 }
 
-async function resolveClaimId({ claimId, inputPath, proof, proofPath }) {
-  if (claimId) {
-    return claimId;
+async function resolveWalletAddress({ inputPath, proof, proofPath, wallet }) {
+  if (wallet) {
+    if (!isAddress(wallet)) {
+      throw new Error("wallet must be a valid EVM address.");
+    }
+
+    return wallet;
   }
 
   const payload = inputPath
     ? readProofFromAudio(new Uint8Array(await readFile(inputPath)))
     : await loadProof({ proof, proofPath });
 
-  if (typeof payload.pacstacClaimId === "string") {
-    return payload.pacstacClaimId;
+  if (!payload?.wallet || !isAddress(payload.wallet)) {
+    throw new Error("Provide wallet, inputPath, proof, or proofPath with a valid proof.wallet.");
   }
 
-  throw new Error(
-    "Provide claimId. SonoSig proofs do not contain a PacStac claim ID by default.",
-  );
+  return payload.wallet;
+}
+
+function buildPacStacWalletPointer(wallet) {
+  if (!isAddress(wallet)) {
+    throw new Error("A valid EVM wallet address is required for the PacStac ENS collection pointer.");
+  }
+
+  return `pacstac:wallet:${wallet.toLowerCase()}`;
 }
 
 async function tryCreateWatermarkedAudioProofHashes(bytes) {

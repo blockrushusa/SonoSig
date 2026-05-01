@@ -72,6 +72,7 @@ type EnsScan = {
   sonosig: {
     claimId?: string;
     isValid: boolean;
+    pointer?: string;
     raw: string;
     version?: number;
   } | null;
@@ -366,15 +367,15 @@ export function EnsToolsStudio() {
                   {scan.sonosig?.isValid ? "SonoSig record found" : "No SonoSig record"}
                 </h2>
               </div>
-              {scan.sonosig?.claimId ? (
+              {scan.sonosig?.isValid ? (
                 <span className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-1.5 font-mono text-xs text-cyan-100">
-                  v{scan.sonosig.version ?? 1}
+                  {scan.sonosig.pointer ? "PacStac wallet" : `v${scan.sonosig.version ?? 1}`}
                 </span>
               ) : null}
             </div>
-            {scan.sonosig?.claimId ? (
+            {scan.sonosig?.isValid ? (
               <code className="mt-4 block break-all rounded-md border border-white/10 bg-black/40 px-3 py-3 font-mono text-xs text-zinc-300">
-                {scan.sonosig.claimId}
+                {scan.sonosig.pointer ?? scan.sonosig.claimId}
               </code>
             ) : (
               <p className="mt-4 text-sm leading-6 text-zinc-400">
@@ -620,6 +621,14 @@ async function readResolverText(
 function parseSonoSigRecord(value: string) {
   if (!value) {
     return null;
+  }
+
+  if (/^pacstac:wallet:0x[a-fA-F0-9]{40}$/.test(value.trim())) {
+    return {
+      isValid: true,
+      pointer: value.trim(),
+      raw: value,
+    };
   }
 
   try {

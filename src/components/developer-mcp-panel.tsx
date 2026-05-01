@@ -17,7 +17,7 @@ const MCP_TOOLS = [
   {
     name: "sonosig_prepare_ens_record",
     purpose:
-      "Builds the compact ENS text record: com.sonosig = { v: 1, latest: claimId }.",
+      "Builds the ENS text record: com.sonosig = pacstac:wallet:<wallet>.",
   },
   {
     name: "sonosig_submit_ens",

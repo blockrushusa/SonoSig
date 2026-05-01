@@ -128,12 +128,9 @@ export function PostEnsSignature() {
           ? `Transaction submitted. Watching Ethereum mainnet for the receipt${receiptWaitSeconds ? ` (${receiptWaitSeconds}s)` : ""}...`
           : status;
 
-  const ensRecordValue = pacstacRegistration?.claimId
-    ? JSON.stringify({
-        v: 1,
-        latest: pacstacRegistration.claimId,
-      })
-    : "";
+  const ensRecordValue = buildPacStacWalletPointer(
+    pacstacRegistration?.wallet ?? lastProof?.wallet,
+  );
   const isEnsProgressModalOpen =
     (isEnsPosting || isConfirming || ensPostPhase !== "idle") &&
     !isEnsConfirmed &&
@@ -261,10 +258,10 @@ export function PostEnsSignature() {
       return;
     }
 
-    if (!pacstacRegistration?.claimId || !ensRecordValue) {
-      logEnsPost("blocked: missing PacStac registration", { normalizedName });
-      setStatus("Register this SonoSig claim with PacStac before publishing to ENS.");
-      trackEvent("ens_post_blocked", { reason: "missing_pacstac_claim" });
+    if (!ensRecordValue) {
+      logEnsPost("blocked: missing wallet pointer", { normalizedName });
+      setStatus("A valid wallet address is required before publishing to ENS.");
+      trackEvent("ens_post_blocked", { reason: "missing_wallet_pointer" });
       return;
     }
 
@@ -284,12 +281,12 @@ export function PostEnsSignature() {
       setReceiptWaitSeconds(0);
       setEnsPostPhase("resolving");
       logEnsPost("start", {
-        claimId: pacstacRegistration.claimId,
+        claimId: pacstacRegistration?.claimId,
         ensName: normalizedName,
         recordKey: SONOSIG_ENS_RECORD_KEY,
       });
       trackEvent("ens_post_start", {
-        has_claim_id: Boolean(pacstacRegistration.claimId),
+        has_claim_id: Boolean(pacstacRegistration?.claimId),
       });
       setStatus("Resolving ENS resolver...");
 
@@ -656,14 +653,14 @@ export function PostEnsSignature() {
               </span>
               <textarea
                 className="min-h-28 rounded-md border border-white/15 bg-zinc-950 px-3 py-3 font-mono text-sm text-zinc-200 outline-none"
-                placeholder='{"v":1,"latest":"sonosig:sha256:<claim_hash>"}'
+                placeholder="pacstac:wallet:0x..."
                 readOnly
                 value={ensRecordValue}
               />
               <span className="text-xs leading-5 text-zinc-500">
-                {pacstacRegistration?.claimId
-                  ? "SonoSig writes one ENS text record that points readers to the latest verified PacStac claim instead of storing the full signature on ENS."
-                  : "Register with PacStac first; then SonoSig will generate this single ENS text-record value."}
+                SonoSig writes one ENS text record that points readers to the
+                PacStac wallet collection for all SonoSig claims tied to this
+                creator wallet.
               </span>
             </label>
           </>
@@ -696,7 +693,7 @@ export function PostEnsSignature() {
               isEnsPosting ||
               isConfirming ||
               isWaitingForReceipt ||
-              !pacstacRegistration?.claimId
+              !ensRecordValue
             }
             onClick={handlePost}
             type="button"
@@ -963,6 +960,14 @@ function getStoredPacStacRegistration(proof: ProofPayload | null) {
   } catch {
     return null;
   }
+}
+
+function buildPacStacWalletPointer(wallet: string | undefined) {
+  if (!wallet || !isAddress(wallet)) {
+    return "";
+  }
+
+  return `pacstac:wallet:${wallet.toLowerCase()}`;
 }
 
 function storePacStacRegistration(

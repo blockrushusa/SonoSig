@@ -523,13 +523,10 @@ export function CreateWatermarkStudio() {
       }
 
       if (shouldPostEns) {
-        if (!registration?.claimId) {
-          throw new Error(
-            "ENS posting needs a PacStac claim ID. Select PacStac once to register this proof first.",
-          );
-        }
-
         const normalizedName = normalize(ensName);
+        const pacstacWalletPointer = buildPacStacWalletPointer(
+          registration?.wallet ?? encodedProof.wallet,
+        );
 
         if (!walletClient) {
           throw new Error("Wallet is not ready. Reconnect your wallet and try again.");
@@ -563,7 +560,7 @@ export function CreateWatermarkStudio() {
           args: [
             namehash(normalizedName),
             SONOSIG_ENS_RECORD_KEY,
-            JSON.stringify({ v: 1, latest: registration.claimId }),
+            pacstacWalletPointer,
           ],
           chain: mainnet,
           functionName: "setText",
@@ -576,7 +573,7 @@ export function CreateWatermarkStudio() {
         setPostStatus("ENS transaction submitted. Track confirmation on Transactions.");
         trackEvent("create_post_ens_submitted");
         storeSubmittedEnsTransaction({
-          claimId: registration.claimId,
+          claimId: registration?.claimId,
           ensName: normalizedName,
           hash: transactionHash,
           proof: encodedProof,
@@ -1350,7 +1347,7 @@ function PostProofModal({
                   ? "The ENS text record is updated on Ethereum mainnet."
                   : (
                       <>
-                        Write the PacStac claim pointer to the `com.sonosig` text record
+                        Write the PacStac wallet collection pointer to the `com.sonosig` text record
                         {ensName.trim()
                           ? ` for ${ensName.trim()}.`
                           : ". Add an ENS name in settings before continuing."}
@@ -2360,6 +2357,14 @@ function getPostingStatusLabel(shouldPostPacStac: boolean, shouldPostEns: boolea
   return "Registering with PacStac";
 }
 
+function buildPacStacWalletPointer(wallet: string | undefined) {
+  if (!wallet || !isAddress(wallet)) {
+    throw new Error("A valid EVM wallet address is required for the PacStac ENS collection pointer.");
+  }
+
+  return `pacstac:wallet:${wallet.toLowerCase()}`;
+}
+
 function downloadRegistrationInfo(
   proof: ProofPayload,
   registration: {
@@ -2398,7 +2403,7 @@ function storeSubmittedEnsTransaction({
   hash,
   proof,
 }: {
-  claimId: string;
+  claimId?: string;
   ensName: string;
   hash: Hash;
   proof: ProofPayload;

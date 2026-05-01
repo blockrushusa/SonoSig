@@ -24,7 +24,7 @@ Core facts:
   settle ownership disputes, recover wallets, reverse blockchain transactions, or delete public
   on-chain/third-party records.
 - The Create page is for encoding/signing, Verify is for checking files, Transactions is for
-  web3/PacStac history, Developer has API/encoding docs, and Support is for help.
+  web3/PacStac history, Docs has encoding/ENS docs, Developer has MCP docs, and Support is for help.
 
 Safety and support rules:
 - Never ask for seed phrases, private keys, passwords, or full payment card numbers.

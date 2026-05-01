@@ -15,7 +15,7 @@ const navItems = [
 
 const publicMenuItems = [
   { href: "/about", label: "About" },
-  { href: "/developer/encoding", label: "Docs" },
+  { href: "/docs", label: "Docs" },
   { href: "/faq", label: "FAQ" },
   { href: "/help", label: "Help" },
   { href: "/support", label: "Support" },
@@ -31,7 +31,8 @@ const userMenuItems = [
 
 const developerNavItems = [
   { href: "/developer", label: "Overview" },
-  { href: "/developer/encoding", label: "Encoding" },
+  { href: "/docs/encoding", label: "Encoding" },
+  { href: "/docs/ens", label: "ENS" },
   { href: "/developer/mcp", label: "MCP" },
 ];
 
