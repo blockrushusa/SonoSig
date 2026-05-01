@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import { Suspense } from "react";
 import { GoogleAnalyticsPageView } from "@/components/google-analytics-page-view";
+import { SiteFooter } from "@/components/site-footer";
 import { GA_MEASUREMENT_ID } from "@/lib/analytics";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -38,6 +39,7 @@ export default function RootLayout({
             <GoogleAnalyticsPageView />
           </Suspense>
           {children}
+          <SiteFooter />
         </Providers>
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}

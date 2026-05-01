@@ -18,7 +18,9 @@ const publicMenuItems = [
   { href: "/developer/encoding", label: "Docs" },
   { href: "/faq", label: "FAQ" },
   { href: "/help", label: "Help" },
+  { href: "/support", label: "Support" },
   { href: "/contact", label: "Contact" },
+  { href: "/terms", label: "Terms" },
 ];
 
 const userMenuItems = [
