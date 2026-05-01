@@ -14,6 +14,7 @@ import {
 import { namehash, normalize } from "viem/ens";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet } from "viem/chains";
+import { scanWebsite } from "./sonosig-website-scanner.mjs";
 
 const MAGIC = "SONOSIG1";
 const HEADER_BYTES = MAGIC.length + 4;
@@ -212,6 +213,65 @@ server.registerTool(
       ...result,
       key: SONOSIG_ENS_RECORD_KEY,
       value,
+    });
+  },
+);
+
+server.registerTool(
+  "sonosig_scan_website",
+  {
+    description:
+      "Scan a public website for audio files and report which files contain SonoSig proofs. Supports crawl limits, robots.txt, optional headless discovery, PacStac/ENS enrichment, and JSON/Markdown summaries.",
+    inputSchema: {
+      allowPrivateHosts: z
+        .boolean()
+        .optional()
+        .describe("Allow localhost/private IP scan targets. Defaults to false."),
+      allowedDomains: z
+        .array(z.string())
+        .optional()
+        .describe("Additional domains allowed for page crawling."),
+      followExternalPageLinks: z
+        .boolean()
+        .optional()
+        .describe("Allow crawling page links on allowedDomains."),
+      headless: z
+        .boolean()
+        .optional()
+        .describe("Try Playwright-based JS discovery when Playwright is installed."),
+      includeExternalAudio: z
+        .boolean()
+        .optional()
+        .describe("Allow CDN/external audio discovered from allowed pages."),
+      keepDownloads: z
+        .boolean()
+        .optional()
+        .describe("Keep temporary audio downloads after the scan."),
+      maxAudioBytes: z
+        .number()
+        .optional()
+        .describe("Maximum audio download size in bytes."),
+      maxDepth: z.number().optional().describe("Maximum crawl depth."),
+      maxPages: z.number().optional().describe("Maximum pages to scan."),
+      rateLimitMs: z.number().optional().describe("Delay between page requests."),
+      respectRobots: z
+        .boolean()
+        .optional()
+        .describe("Respect robots.txt. Defaults to true."),
+      url: z.string().describe("Root website URL to scan."),
+    },
+  },
+  async (input) => {
+    const report = await scanWebsite(input);
+
+    return jsonToolResult({
+      advancedDiscovery: report.advancedDiscovery,
+      errors: report.errors,
+      markdown: report.markdown,
+      results: report.results,
+      rootUrl: report.rootUrl,
+      scanId: report.scanId,
+      summary: report.summary,
     });
   },
 );

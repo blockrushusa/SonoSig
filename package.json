@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "mcp:stdio": "node scripts/sonosig-mcp-server.mjs",
+    "scan:website": "node scripts/scan-sonosig-website.mjs",
     "firebase:emulators": "firebase emulators:start --only auth,firestore,hosting",
     "firebase:deploy": "rm -rf .next .firebase && IS_WEBPACK_TEST=1 firebase deploy --only firestore,hosting",
     "firebase:deploy:rules": "firebase deploy --only firestore",

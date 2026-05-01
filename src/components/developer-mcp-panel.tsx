@@ -24,6 +24,11 @@ const MCP_TOOLS = [
     purpose:
       "Writes the com.sonosig ENS text record when RPC and either SONOSIG_ENS_PRIVATE_KEY or BASE_X402_WALLET_PRIVATE_KEY are configured.",
   },
+  {
+    name: "sonosig_scan_website",
+    purpose:
+      "Crawls a public website, discovers audio files, verifies SonoSig proofs, and returns JSON/Markdown scan summaries.",
+  },
 ];
 
 const mcpConfig = `{

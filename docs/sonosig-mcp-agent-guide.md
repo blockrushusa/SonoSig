@@ -339,5 +339,6 @@ The server was checked with an MCP initialize and `tools/list` request. It retur
 - `sonosig_submit_pacstac`
 - `sonosig_prepare_ens_record`
 - `sonosig_submit_ens`
+- `sonosig_scan_website`
 
 This confirms the stdio server starts and advertises the expected tool surface.

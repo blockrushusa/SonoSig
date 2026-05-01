@@ -12,9 +12,12 @@ Next.js application bootstrapped with [`create-next-app`](https://nextjs.org/doc
 - **Provenance services:** PacStac claim registration, ENS `com.sonosig` text-record publishing, and local web3 transaction history for verification status.
 - **x402 payments:** `@x402/fetch` and `@x402/evm` support paid PacStac API access through the Base x402 wallet.
 - **Agent integration:** Model Context Protocol server in `scripts/sonosig-mcp-server.mjs` for encode, verify, PacStac registration, and ENS workflows.
+- **Website scanning:** CLI, MCP, and admin scanner for finding SonoSig-encoded audio files on public websites.
 - **Deployment and ops:** Firebase App Hosting, Firebase CLI scripts, Firestore rules deployment, and Porkbun DNS sync scripts.
 
 For MCP client setup, tool behavior, and agent safety rules, see [SonoSig MCP Agent Guide](./docs/sonosig-mcp-agent-guide.md).
+For website scanner architecture and usage, see [SonoSig Website Scanner Agent Plan](./docs/sonosig-website-scanner-agent-plan.md).
+For the completed scanner implementation checklist, see [SonoSig Website Scanner Implementation TODO](./docs/sonosig-website-scanner-implementation-todo.md).
 
 ## Getting Started
 
@@ -31,6 +34,12 @@ bun dev
 ```
 
 Open [http://localhost:3050](http://localhost:3050) with your browser to see the result.
+
+Run a public website scan for SonoSig-encoded audio:
+
+```bash
+npm run scan:website -- --url https://example.com --max-pages 25
+```
 
 You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
 
