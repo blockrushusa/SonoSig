@@ -254,33 +254,32 @@ export function generateMarkdownReport(report) {
     "",
     `- Pages scanned: ${report.summary.pagesScanned}`,
     `- Audio files discovered: ${report.summary.audioDiscovered}`,
-    `- SonoSig verified: ${report.summary.sonosigVerified}`,
+    `- SonoSig proofs found: ${report.summary.sonosigProofs}`,
+    `- SonoSig audio hash verified: ${report.summary.sonosigVerified}`,
     `- SonoSig payload found but audio changed: ${report.summary.payloadChanged}`,
     `- SonoSig payload found, hash not checked: ${report.summary.payloadHashNotChecked}`,
     `- Not encoded: ${report.summary.notEncoded}`,
     `- Skipped: ${report.summary.skipped}`,
     `- Errors: ${report.summary.errors}`,
     "",
-    "## Verified Files",
+    "## SonoSig Proofs Found",
     "",
   ];
 
-  const verified = report.results.filter((result) =>
-    ["sonosig_verified", "sonosig_payload_found_hash_not_checked"].includes(
-      result.status,
-    ),
+  const proofResults = report.results.filter((result) =>
+    result.status.startsWith("sonosig_"),
   );
 
-  if (verified.length) {
-    lines.push("| Audio URL | Wallet | ENS | Audio hash | Issued |");
-    lines.push("|---|---|---|---|---|");
-    for (const result of verified) {
+  if (proofResults.length) {
+    lines.push("| Status | Audio URL | Wallet | ENS | Audio hash | Issued |");
+    lines.push("|---|---|---|---|---|---|");
+    for (const result of proofResults) {
       lines.push(
-        `| ${escapeMd(result.audioUrl)} | ${escapeMd(result.proof?.wallet ?? "")} | ${escapeMd(result.proof?.ens ?? "")} | ${escapeMd(result.proof?.audioHash ?? "")} | ${escapeMd(result.proof?.issuedAt ?? "")} |`,
+        `| ${escapeMd(result.status)} | ${escapeMd(result.audioUrl)} | ${escapeMd(result.proof?.wallet ?? "")} | ${escapeMd(result.proof?.ens ?? "")} | ${escapeMd(result.proof?.audioHash ?? "")} | ${escapeMd(result.proof?.issuedAt ?? "")} |`,
       );
     }
   } else {
-    lines.push("No SonoSig-verified audio files were found.");
+    lines.push("No SonoSig proofs were found.");
   }
 
   lines.push("", "## Audio Findings", "");
@@ -1401,6 +1400,7 @@ function summarizeScan({ audio, errors, pages, results, skipped }) {
       (result) => result.status === "sonosig_payload_found_hash_not_checked",
     ).length,
     skipped: skipped.length + results.filter((result) => result.status === "skipped").length,
+    sonosigProofs: results.filter((result) => result.status.startsWith("sonosig_")).length,
     sonosigVerified: results.filter((result) => result.status === "sonosig_verified").length,
   };
 }

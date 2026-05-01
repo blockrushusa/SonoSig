@@ -12,7 +12,7 @@ Next.js application bootstrapped with [`create-next-app`](https://nextjs.org/doc
 - **Provenance services:** PacStac claim registration, ENS `com.sonosig` text-record publishing, and local web3 transaction history for verification status.
 - **x402 payments:** `@x402/fetch` and `@x402/evm` support paid PacStac API access through the Base x402 wallet.
 - **Agent integration:** Model Context Protocol server in `scripts/sonosig-mcp-server.mjs` for encode, verify, PacStac registration, and ENS workflows.
-- **Website scanning:** CLI, MCP, and admin scanner for finding SonoSig-encoded audio files on public websites.
+- **Website scanner agent:** CLI, MCP, and admin agent for finding SonoSig-encoded audio files on public websites.
 - **Deployment and ops:** Firebase App Hosting, Firebase CLI scripts, Firestore rules deployment, and Porkbun DNS sync scripts.
 
 For MCP client setup, tool behavior, and agent safety rules, see [SonoSig MCP Agent Guide](./docs/sonosig-mcp-agent-guide.md).

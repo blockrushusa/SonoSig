@@ -1,5 +1,6 @@
-import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
+import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm";
+import { ExactEvmSchemeV1 } from "@x402/evm/v1";
 import { privateKeyToAccount } from "viem/accounts";
 import { buildSiweMessage, type ProofPayload } from "@/lib/audio-watermark";
 import { getAdminApiConfig, type PacStacApiMode } from "@/lib/admin-api-config";
@@ -42,6 +43,15 @@ type PacStacRequestBody = {
     origin: string;
   };
 };
+
+class PacStacConfigError extends Error {
+  constructor(
+    message: string,
+    readonly status = 500,
+  ) {
+    super(message);
+  }
+}
 
 const PACSTAC_CLAIMS_URL =
   process.env.PACSTAC_SONOSIG_CLAIMS_URL ??
@@ -212,20 +222,11 @@ export async function POST(request: Request) {
       error instanceof Error
         ? error.message
         : "PacStac API mode is not configured.",
-      500,
+      error instanceof PacStacConfigError ? error.status : 500,
     );
   }
 
-  const responseText = await pacstacResponse.text();
-  let responseBody: unknown = null;
-
-  if (responseText) {
-    try {
-      responseBody = JSON.parse(responseText);
-    } catch {
-      responseBody = { message: responseText };
-    }
-  }
+  const responseBody = await readPacStacResponseBody(pacstacResponse);
 
   if (!pacstacResponse.ok) {
     return Response.json(
@@ -245,7 +246,24 @@ async function postPacStacClaim(
   body: PacStacRequestBody,
 ) {
   if (apiMode === "x402") {
-    return await postPacStacClaimWithX402(body);
+    const response = await postPacStacClaimWithX402(body);
+
+    if (!(await isPacStacApiKeyRequiredResponse(response))) {
+      return response;
+    }
+
+    if (process.env.PACSTAC_API_KEY?.trim()) {
+      console.warn(
+        "[pacstac-sonosig] PacStac claim creation requires API key auth; retrying with PACSTAC_API_KEY because x402 mode is selected but this endpoint did not advertise x402.",
+      );
+
+      return await postPacStacClaimWithApiKey(body);
+    }
+
+    throw new PacStacConfigError(
+      "PacStac SonoSig claim creation currently requires PACSTAC_API_KEY. PacStac x402 is available for premium wallet/API reads, but the claim creation endpoint did not advertise x402 payment requirements.",
+      501,
+    );
   }
 
   return await postPacStacClaimWithApiKey(body);
@@ -276,14 +294,10 @@ async function postPacStacClaimWithX402(body: PacStacRequestBody) {
   }
 
   const account = privateKeyToAccount(privateKey);
-  const fetchWithPayment = wrapFetchWithPaymentFromConfig(fetch, {
-    schemes: [
-      {
-        client: new ExactEvmScheme(account),
-        network: "eip155:8453",
-      },
-    ],
-  });
+  const client = new x402Client()
+    .register("eip155:8453", new ExactEvmScheme(account))
+    .registerV1("base", new ExactEvmSchemeV1(account));
+  const fetchWithPayment = wrapFetchWithPayment(fetch, client);
 
   return await fetchWithPayment(PACSTAC_CLAIMS_URL, {
     body: JSON.stringify(body),
@@ -293,4 +307,33 @@ async function postPacStacClaimWithX402(body: PacStacRequestBody) {
     },
     method: "POST",
   });
+}
+
+async function isPacStacApiKeyRequiredResponse(response: Response) {
+  if (response.status !== 401) {
+    return false;
+  }
+
+  const body = await readPacStacResponseBody(response.clone());
+
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "code" in body &&
+    body.code === "API_KEY_REQUIRED"
+  );
+}
+
+async function readPacStacResponseBody(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return { message: responseText };
+  }
 }

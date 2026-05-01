@@ -42,7 +42,7 @@ const adminNavItems = [
   { href: "/admin/site", label: "Site" },
   { href: "/admin/system", label: "System" },
   { href: "/admin/analytics", label: "Analytics" },
-  { href: "/admin/website-scanner", label: "Website scanner" },
+  { href: "/admin/website-scanner", label: "Website scanner agent" },
 ];
 
 export function SiteHeader() {

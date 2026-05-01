@@ -58,7 +58,8 @@ const modeOptions: Array<{
     value: "api-key",
   },
   {
-    description: "Uses x402 with the Base x402 wallet to pay the PacStac API.",
+    description:
+      "Uses x402 with the Base wallet for paid PacStac reads. SonoSig claim creation uses PACSTAC_API_KEY until PacStac advertises x402 for namespace writes.",
     label: "x402 mode",
     value: "x402",
   },
@@ -89,9 +90,13 @@ export function AdminApiConfig() {
         : "PACSTAC_API_KEY is not configured.";
     }
 
-    return capabilities.x402WalletConfigured
-      ? "Base x402 wallet is configured for payments."
-      : "BASE_X402_WALLET_PRIVATE_KEY is not configured.";
+    if (!capabilities.x402WalletConfigured) {
+      return "BASE_X402_WALLET_PRIVATE_KEY is not configured.";
+    }
+
+    return capabilities.pacstacApiKeyConfigured
+      ? "Base x402 wallet is configured. PACSTAC_API_KEY is available for SonoSig claim creation when PacStac requires API-key auth."
+      : "Base x402 wallet is configured, but PACSTAC_API_KEY is still needed for SonoSig claim creation.";
   }, [capabilities, config.pacstacApiMode]);
 
   async function getAuthorizationHeader() {
@@ -350,8 +355,9 @@ export function AdminApiConfig() {
               Base wallet
             </h2>
             <p className="mt-2 text-sm leading-6 text-zinc-400">
-              x402 mode uses this wallet on Base mainnet for PacStac API
-              payments.
+              x402 mode uses this wallet on Base mainnet for paid PacStac API
+              reads. PacStac claim writes may still require server API-key
+              authentication.
             </p>
           </div>
 

@@ -40,6 +40,7 @@ type ScanReport = {
     payloadChanged: number;
     payloadHashNotChecked: number;
     skipped: number;
+    sonosigProofs?: number;
     sonosigVerified: number;
   };
 };
@@ -56,13 +57,14 @@ export function AdminWebsiteScanner() {
   const [error, setError] = useState("");
   const [isScanning, setIsScanning] = useState(false);
 
-  const verifiedResults = useMemo(
+  const proofResults = useMemo(
     () =>
       report?.results.filter((result) =>
         result.status.startsWith("sonosig_"),
       ) ?? [],
     [report],
   );
+  const proofCount = report?.summary.sonosigProofs ?? proofResults.length;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -117,12 +119,12 @@ export function AdminWebsiteScanner() {
             Admin
           </p>
           <h1 className="mt-4 text-4xl font-semibold leading-tight text-white md:text-5xl">
-            Website scanner
+            Website scanner agent
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
-            Crawl a public website, discover audio files, and check which files
-            carry a SonoSig proof. The scanner respects crawl limits and keeps
-            temporary downloads out of long-term storage.
+            Send an agent to crawl a public website, discover audio files, and
+            check which files carry a SonoSig proof. The agent respects crawl
+            limits and keeps temporary downloads out of long-term storage.
           </p>
         </div>
 
@@ -195,7 +197,7 @@ export function AdminWebsiteScanner() {
               disabled={isScanning}
               type="submit"
             >
-              {isScanning ? "Scanning..." : "Run scan"}
+              {isScanning ? "Agent scanning..." : "Run agent"}
             </button>
           </div>
         </form>
@@ -212,9 +214,9 @@ export function AdminWebsiteScanner() {
               <MetricCard label="Pages" value={report.summary.pagesScanned} />
               <MetricCard label="Audio" value={report.summary.audioDiscovered} />
               <MetricCard
-                label="Verified"
+                label="Proofs found"
                 tone="ok"
-                value={report.summary.sonosigVerified}
+                value={proofCount}
               />
               <MetricCard
                 label="Errors"
@@ -239,12 +241,12 @@ export function AdminWebsiteScanner() {
               )}
             </section>
 
-            {verifiedResults.length ? (
+            {proofResults.length ? (
               <section className="grid gap-3 rounded-lg border border-emerald-300/20 bg-emerald-400/10 p-5">
                 <h2 className="text-xl font-semibold text-emerald-100">
                   SonoSig proofs found
                 </h2>
-                {verifiedResults.map((result) => (
+                {proofResults.map((result) => (
                   <ResultRow key={`verified-${result.audioUrl}`} result={result} />
                 ))}
               </section>
