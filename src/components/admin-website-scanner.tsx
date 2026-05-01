@@ -119,7 +119,7 @@ export function AdminWebsiteScanner() {
             Admin
           </p>
           <h1 className="mt-4 text-4xl font-semibold leading-tight text-white md:text-5xl">
-            Website scanner agent
+            Agentic Scan
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
             Send an agent to crawl a public website, discover audio files, and

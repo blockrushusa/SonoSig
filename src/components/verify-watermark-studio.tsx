@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, type DragEvent } from "react";
 import { verifyMessage } from "viem";
 import {
@@ -189,7 +190,7 @@ export function VerifyWatermarkStudio() {
     <div className={containerClass}>
       <section className="min-h-[26rem] rounded-lg border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/30 sm:p-8">
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-cyan-300">
-          Verify
+          Verify Now
         </p>
 
         <div className="mt-7 grid gap-5">
@@ -251,7 +252,7 @@ export function VerifyWatermarkStudio() {
                 <p className="mt-2 text-sm text-zinc-400">
                   {selectedFileName
                     ? "Click to choose a different file"
-                    : "Click to upload or drag a file into this box"}
+                    : "Verify a watermarked file from your device"}
                 </p>
               </div>
               <span className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">
@@ -270,6 +271,27 @@ export function VerifyWatermarkStudio() {
               type="file"
             />
           </div>
+
+          <Link
+            className={`${getVerifyUploadZoneSizeClass(false)} grid cursor-pointer place-items-center rounded-lg border border-dashed border-white/15 bg-zinc-950/70 text-center transition-all duration-500 ease-out hover:border-cyan-300/70 hover:bg-cyan-300/[0.06]`}
+            href="/website-scanner"
+          >
+            <div className="grid justify-items-center gap-4">
+              <div className="grid h-14 w-14 place-items-center rounded-full border border-cyan-300/30 bg-cyan-300/10 transition-all duration-500">
+                <span className="text-xl font-semibold text-cyan-200">+</span>
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-white">
+                  Scan a website for audio files that carry embedded SonoSig
+                  proofs.
+                </p>
+                <p className="mt-2 text-sm text-zinc-400">Agentic Scan</p>
+              </div>
+              <span className="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">
+                Scan
+              </span>
+            </div>
+          </Link>
 
           {status && verification?.status !== "valid" ? (
             <p className="text-center text-sm leading-6 text-zinc-400">
