@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Hash } from "viem";
+import type { Hash, PublicClient } from "viem";
 import { usePublicClient } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import {
@@ -11,6 +11,14 @@ import {
   WEB3_TRANSACTIONS_EVENT,
   type Web3Transaction,
 } from "@/lib/web3-transactions";
+
+type TransactionReceiptCheck = {
+  blockNumber?: number;
+  error?: string;
+  hash: string;
+  source?: string;
+  status: "confirmed" | "failed" | "submitted";
+};
 
 export function UserTransactions() {
   const mainnetPublicClient = usePublicClient({ chainId: mainnet.id });
@@ -47,11 +55,6 @@ export function UserTransactions() {
   }, []);
 
   const completeTransaction = useCallback(async (transaction: Web3Transaction) => {
-    if (!mainnetPublicClient) {
-      setStatus("Ethereum mainnet RPC is not ready.");
-      return;
-    }
-
     if (!transaction.hash) {
       setStatus("This history item does not have an on-chain transaction.");
       return;
@@ -61,22 +64,26 @@ export function UserTransactions() {
     setStatus("");
 
     try {
-      const receipt = await mainnetPublicClient.getTransactionReceipt({
-        hash: transaction.hash as Hash,
-      });
+      const receipt = await checkTransactionReceipt(
+        transaction.hash,
+        mainnetPublicClient,
+      );
 
-      if (receipt.status === "success") {
-        updateWeb3Transaction(transaction.id, {
-          error: undefined,
-          status: "confirmed",
-        });
+      if (receipt.status === "confirmed") {
+        updateWeb3Transaction(transaction.id, { error: undefined, status: "confirmed" });
         setStatus("Transaction confirmed.");
-      } else {
+      } else if (receipt.status === "failed") {
         updateWeb3Transaction(transaction.id, {
           error: "The transaction was mined but reverted.",
           status: "failed",
         });
         setStatus("Transaction failed.");
+      } else {
+        updateWeb3Transaction(transaction.id, {
+          error: undefined,
+          status: "submitted",
+        });
+        setStatus("Transaction is still waiting for confirmation.");
       }
 
       reloadTransactions();
@@ -88,13 +95,6 @@ export function UserTransactions() {
   }, [mainnetPublicClient, reloadTransactions]);
 
   const refreshPendingTransactions = useCallback(async (options?: { silent?: boolean }) => {
-    if (!mainnetPublicClient) {
-      if (!options?.silent) {
-        setStatus("Ethereum mainnet RPC is not ready.");
-      }
-      return;
-    }
-
     const pendingTransactions = getWeb3Transactions().filter(
       (transaction) =>
         transaction.status !== "confirmed" &&
@@ -119,19 +119,36 @@ export function UserTransactions() {
       let pendingCount = 0;
 
       for (const transaction of pendingTransactions) {
-        try {
-          const receipt = await mainnetPublicClient.getTransactionReceipt({
-            hash: transaction.hash as Hash,
-          });
+        if (!transaction.hash) {
+          pendingCount += 1;
+          continue;
+        }
 
-          updateWeb3Transaction(transaction.id, {
-            error:
-              receipt.status === "reverted"
-                ? "The transaction was mined but reverted."
-                : undefined,
-            status: receipt.status === "success" ? "confirmed" : "failed",
-          });
-          completedCount += 1;
+        try {
+          const receipt = await checkTransactionReceipt(
+            transaction.hash,
+            mainnetPublicClient,
+          );
+
+          if (receipt.status === "confirmed") {
+            updateWeb3Transaction(transaction.id, {
+              error: undefined,
+              status: "confirmed",
+            });
+            completedCount += 1;
+          } else if (receipt.status === "failed") {
+            updateWeb3Transaction(transaction.id, {
+              error: "The transaction was mined but reverted.",
+              status: "failed",
+            });
+            completedCount += 1;
+          } else {
+            updateWeb3Transaction(transaction.id, {
+              error: undefined,
+              status: "submitted",
+            });
+            pendingCount += 1;
+          }
         } catch {
           pendingCount += 1;
           // The transaction may still be pending or unavailable from this RPC.
@@ -282,6 +299,39 @@ export function UserTransactions() {
       </div>
     </section>
   );
+}
+
+async function checkTransactionReceipt(
+  hash: string,
+  publicClient: PublicClient | undefined,
+): Promise<TransactionReceiptCheck> {
+  try {
+    const response = await fetch(
+      `/api/eth/transaction-receipt?hash=${encodeURIComponent(hash)}`,
+      { cache: "no-store" },
+    );
+    const body = (await response.json()) as TransactionReceiptCheck;
+
+    if (response.ok || response.status === 202) {
+      return body;
+    }
+  } catch {
+    // Fall back to the browser RPC below.
+  }
+
+  if (!publicClient) {
+    return { hash, status: "submitted" };
+  }
+
+  const receipt = await publicClient.getTransactionReceipt({
+    hash: hash as Hash,
+  });
+
+  return {
+    blockNumber: Number(receipt.blockNumber),
+    hash,
+    status: receipt.status === "success" ? "confirmed" : "failed",
+  };
 }
 
 function HistorySection({

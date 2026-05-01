@@ -47,7 +47,7 @@ const adminNavItems = [
 export function SiteHeader() {
   const { user } = useAuthUser();
   const { isAdmin } = useAdminAccess();
-  const menuItems = user ? [...publicMenuItems, ...userMenuItems] : publicMenuItems;
+  const menuItems = user ? [...userMenuItems, ...publicMenuItems] : publicMenuItems;
 
   return (
     <header className="flex flex-col gap-4 border-b border-white/10 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">

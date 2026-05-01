@@ -14,6 +14,8 @@ Next.js application bootstrapped with [`create-next-app`](https://nextjs.org/doc
 - **Agent integration:** Model Context Protocol server in `scripts/sonosig-mcp-server.mjs` for encode, verify, PacStac registration, and ENS workflows.
 - **Deployment and ops:** Firebase App Hosting, Firebase CLI scripts, Firestore rules deployment, and Porkbun DNS sync scripts.
 
+For MCP client setup, tool behavior, and agent safety rules, see [SonoSig MCP Agent Guide](./docs/sonosig-mcp-agent-guide.md).
+
 ## Getting Started
 
 First, run the development server:
