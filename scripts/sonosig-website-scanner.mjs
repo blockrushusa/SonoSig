@@ -13,6 +13,7 @@ const DEFAULT_MAX_PAGES = 50;
 const DEFAULT_MAX_DEPTH = 2;
 const DEFAULT_RATE_LIMIT_MS = 500;
 const DEFAULT_TIMEOUT_MS = 15_000;
+const SCAN_SCOPES = new Set(["auto", "page", "site"]);
 const AUDIO_EXTENSIONS = new Set([
   ".aif",
   ".aiff",
@@ -51,6 +52,7 @@ export const DEFAULT_SCAN_OPTIONS = {
   maxPages: DEFAULT_MAX_PAGES,
   rateLimitMs: DEFAULT_RATE_LIMIT_MS,
   respectRobots: true,
+  scanScope: "auto",
   timeoutMs: DEFAULT_TIMEOUT_MS,
   userAgent: DEFAULT_USER_AGENT,
 };
@@ -59,6 +61,13 @@ export async function scanWebsite(inputOptions) {
   const startedAt = new Date().toISOString();
   const options = normalizeOptions(inputOptions);
   const rootUrl = normalizeHttpUrl(options.url);
+  options.scanScope = resolveScanScope(rootUrl, options.scanScope);
+
+  if (options.scanScope === "page") {
+    options.maxDepth = 0;
+    options.maxPages = 1;
+  }
+
   const scanId = createScanId(rootUrl);
   const tempDir =
     options.tempDir ?? join(process.cwd(), ".local", "website-scans", scanId);
@@ -92,12 +101,14 @@ export async function scanWebsite(inputOptions) {
   const visitedPages = new Set();
   const pageCandidates = new Set([rootUrl.href]);
 
-  for (const sitemapUrl of await discoverSitemapPages(rootUrl, options, advancedDiscovery)) {
-    enqueuePage(queue, pageCandidates, sitemapUrl, 1, "sitemap", options, allowedPageHosts);
-  }
+  if (options.scanScope === "site") {
+    for (const sitemapUrl of await discoverSitemapPages(rootUrl, options, advancedDiscovery)) {
+      enqueuePage(queue, pageCandidates, sitemapUrl, 1, "sitemap", options, allowedPageHosts);
+    }
 
-  for (const feedUrl of await discoverFeedPages(rootUrl, options, advancedDiscovery)) {
-    enqueuePage(queue, pageCandidates, feedUrl, 1, "feed", options, allowedPageHosts);
+    for (const feedUrl of await discoverFeedPages(rootUrl, options, advancedDiscovery)) {
+      enqueuePage(queue, pageCandidates, feedUrl, 1, "feed", options, allowedPageHosts);
+    }
   }
 
   while (queue.length && pages.length < options.maxPages) {
@@ -162,20 +173,34 @@ export async function scanWebsite(inputOptions) {
         );
       }
 
-      for (const feedUrl of discoveries.feeds) {
-        const feedPages = await discoverFeedPages(
-          normalizeHttpUrl(feedUrl),
-          options,
-          advancedDiscovery,
-          { explicitFeedUrl: feedUrl },
-        );
-        for (const feedPage of feedPages) {
+      if (options.scanScope === "site") {
+        for (const feedUrl of discoveries.feeds) {
+          const feedPages = await discoverFeedPages(
+            normalizeHttpUrl(feedUrl),
+            options,
+            advancedDiscovery,
+            { explicitFeedUrl: feedUrl },
+          );
+          for (const feedPage of feedPages) {
+            enqueuePage(
+              queue,
+              pageCandidates,
+              feedPage,
+              next.depth + 1,
+              "feed",
+              options,
+              allowedPageHosts,
+            );
+          }
+        }
+
+        for (const link of discoveries.pageLinks) {
           enqueuePage(
             queue,
             pageCandidates,
-            feedPage,
+            link,
             next.depth + 1,
-            "feed",
+            "page",
             options,
             allowedPageHosts,
           );
@@ -185,18 +210,6 @@ export async function scanWebsite(inputOptions) {
       if (options.headless) {
         const headlessAudio = await discoverHeadlessAudio(pageUrl.href, options, advancedDiscovery);
         collectAudio(discoveredAudioMap, headlessAudio, pageUrl.href, allowedAudioHosts);
-      }
-
-      for (const link of discoveries.pageLinks) {
-        enqueuePage(
-          queue,
-          pageCandidates,
-          link,
-          next.depth + 1,
-          "page",
-          options,
-          allowedPageHosts,
-        );
       }
     } catch (error) {
       pageRecord.status = "failed";
@@ -253,6 +266,7 @@ export function generateMarkdownReport(report) {
     "## Summary",
     "",
     `- Pages scanned: ${report.summary.pagesScanned}`,
+    `- Scan scope: ${report.options.scanScope}`,
     `- Audio files discovered: ${report.summary.audioDiscovered}`,
     `- SonoSig proofs found: ${report.summary.sonosigProofs}`,
     `- SonoSig audio hash verified: ${report.summary.sonosigVerified}`,
@@ -374,6 +388,12 @@ function normalizeOptions(inputOptions) {
     throw new Error("A root website URL is required.");
   }
 
+  const scanScope = inputOptions.scanScope ?? DEFAULT_SCAN_OPTIONS.scanScope;
+
+  if (!SCAN_SCOPES.has(scanScope)) {
+    throw new Error("scanScope must be auto, page, or site.");
+  }
+
   return {
     ...DEFAULT_SCAN_OPTIONS,
     ...inputOptions,
@@ -382,8 +402,21 @@ function normalizeOptions(inputOptions) {
     maxDepth: Number(inputOptions.maxDepth ?? DEFAULT_MAX_DEPTH),
     maxPages: Number(inputOptions.maxPages ?? DEFAULT_MAX_PAGES),
     rateLimitMs: Number(inputOptions.rateLimitMs ?? DEFAULT_RATE_LIMIT_MS),
+    scanScope,
     timeoutMs: Number(inputOptions.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   };
+}
+
+function resolveScanScope(url, scanScope) {
+  if (scanScope === "page" || scanScope === "site") {
+    return scanScope;
+  }
+
+  return isRootSiteUrl(url) ? "site" : "page";
+}
+
+function isRootSiteUrl(url) {
+  return url.pathname === "/" && !url.search;
 }
 
 function normalizeHttpUrl(value, baseUrl) {
@@ -1417,6 +1450,7 @@ function publicOptions(options) {
     maxPages: options.maxPages,
     rateLimitMs: options.rateLimitMs,
     respectRobots: options.respectRobots,
+    scanScope: options.scanScope,
   };
 }
 

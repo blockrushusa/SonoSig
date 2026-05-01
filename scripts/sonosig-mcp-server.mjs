@@ -258,6 +258,12 @@ server.registerTool(
         .boolean()
         .optional()
         .describe("Respect robots.txt. Defaults to true."),
+      scanScope: z
+        .enum(["auto", "page", "site"])
+        .optional()
+        .describe(
+          "auto scans root URLs as sites and specific page URLs as a single page. Use page or site to force behavior.",
+        ),
       url: z.string().describe("Root website URL to scan."),
     },
   },

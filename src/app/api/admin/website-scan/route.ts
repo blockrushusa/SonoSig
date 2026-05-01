@@ -15,6 +15,7 @@ type WebsiteScanRequest = {
   maxPages?: number;
   rateLimitMs?: number;
   respectRobots?: boolean;
+  scanScope?: "auto" | "page" | "site";
   url?: string;
 };
 
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
       maxPages: clampNumber(body.maxPages, 1, 100),
       rateLimitMs: clampNumber(body.rateLimitMs, 0, 5_000),
       respectRobots: body.respectRobots !== false,
+      scanScope: isScanScope(body.scanScope) ? body.scanScope : "auto",
       url: body.url,
     });
 
@@ -70,6 +72,10 @@ export async function POST(request: Request) {
       500,
     );
   }
+}
+
+function isScanScope(value: unknown): value is "auto" | "page" | "site" {
+  return value === "auto" || value === "page" || value === "site";
 }
 
 function clampNumber(

@@ -58,6 +58,7 @@ async function runOnce(options) {
     maxPages: options.maxPages,
     rateLimitMs: options.rateLimitMs,
     respectRobots: !options.ignoreRobots,
+    scanScope: options.scanScope,
     timeoutMs: options.timeoutMs,
     url: options.url,
   });
@@ -116,6 +117,9 @@ function parseArgs(argv) {
     } else if (arg === "--timeout-ms") {
       parsed.timeoutMs = Number(next);
       index += 1;
+    } else if (arg === "--scan-scope") {
+      parsed.scanScope = next;
+      index += 1;
     } else if (arg === "--allowed-domain") {
       parsed.allowedDomain.push(next);
       index += 1;
@@ -170,6 +174,8 @@ Options:
   --max-audio-bytes <number>   Maximum audio download size.
   --rate-limit-ms <number>     Delay between page requests.
   --timeout-ms <number>        Fetch timeout.
+  --scan-scope <auto|page|site>
+                                auto scans root URLs as sites and specific URLs as one page.
   --allowed-domain <host>      Additional allowed page host. Repeatable.
   --output-dir <path>          Directory for scan-report.json and scan-report.md.
   --baseline <path>            Previous scan-report.json for alert comparison.

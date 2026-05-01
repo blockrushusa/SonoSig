@@ -43,6 +43,9 @@ type ScanReport = {
     sonosigProofs?: number;
     sonosigVerified: number;
   };
+  options?: {
+    scanScope?: "page" | "site";
+  };
 };
 
 export function AdminWebsiteScanner() {
@@ -65,6 +68,7 @@ export function AdminWebsiteScanner() {
     [report],
   );
   const proofCount = report?.summary.sonosigProofs ?? proofResults.length;
+  const inferredScanScope = inferScanScope(url);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,6 +90,7 @@ export function AdminWebsiteScanner() {
           maxDepth,
           maxPages,
           respectRobots,
+          scanScope: "auto",
           url,
         }),
         cache: "no-store",
@@ -142,6 +147,13 @@ export function AdminWebsiteScanner() {
               type="url"
               value={url}
             />
+            {url ? (
+              <span className="text-xs leading-5 text-zinc-500">
+                {inferredScanScope === "page"
+                  ? "Specific page URL detected. The agent will scan only this page."
+                  : "Root site URL detected. The agent may crawl linked pages within the configured limits."}
+              </span>
+            ) : null}
           </label>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -151,11 +163,12 @@ export function AdminWebsiteScanner() {
               </span>
               <input
                 className="rounded-md border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-300/60"
+                disabled={inferredScanScope === "page"}
                 max={100}
                 min={1}
                 onChange={(event) => setMaxPages(Number(event.target.value))}
                 type="number"
-                value={maxPages}
+                value={inferredScanScope === "page" ? 1 : maxPages}
               />
             </label>
             <label className="grid gap-2">
@@ -164,11 +177,12 @@ export function AdminWebsiteScanner() {
               </span>
               <input
                 className="rounded-md border border-white/10 bg-zinc-950 px-4 py-3 text-sm text-white outline-none focus:border-cyan-300/60"
+                disabled={inferredScanScope === "page"}
                 max={4}
                 min={0}
                 onChange={(event) => setMaxDepth(Number(event.target.value))}
                 type="number"
-                value={maxDepth}
+                value={inferredScanScope === "page" ? 0 : maxDepth}
               />
             </label>
           </div>
@@ -210,8 +224,12 @@ export function AdminWebsiteScanner() {
 
         {report ? (
           <>
-            <section className="grid gap-4 md:grid-cols-4">
+            <section className="grid gap-4 md:grid-cols-5">
               <MetricCard label="Pages" value={report.summary.pagesScanned} />
+              <MetricCard
+                label="Scope"
+                textValue={report.options?.scanScope === "page" ? "Page" : "Site"}
+              />
               <MetricCard label="Audio" value={report.summary.audioDiscovered} />
               <MetricCard
                 label="Proofs found"
@@ -291,10 +309,12 @@ function MetricCard({
   label,
   tone = "neutral",
   value,
+  textValue,
 }: {
   label: string;
   tone?: "error" | "neutral" | "ok";
-  value: number;
+  value?: number;
+  textValue?: string;
 }) {
   const toneClass =
     tone === "ok"
@@ -308,9 +328,19 @@ function MetricCard({
       <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-70">
         {label}
       </p>
-      <p className="mt-4 text-3xl font-semibold">{value}</p>
+      <p className="mt-4 text-3xl font-semibold">{textValue ?? value}</p>
     </div>
   );
+}
+
+function inferScanScope(value: string) {
+  try {
+    const parsed = new URL(value);
+
+    return parsed.pathname === "/" && !parsed.search ? "site" : "page";
+  } catch {
+    return "site";
+  }
 }
 
 function ResultRow({ result }: { result: ScanResult }) {
