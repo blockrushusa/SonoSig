@@ -13,6 +13,10 @@ import {
 } from "firebase/auth";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount, useDisconnect, useSignMessage } from "wagmi";
+import {
+  SONOSIG_OPEN_LOGIN_EVENT,
+  type OpenLoginEventDetail,
+} from "@/lib/auth-modal-events";
 import { isFirebaseConfigured } from "@/lib/firebase/client";
 import { useAuthUser } from "@/lib/firebase/use-auth-user";
 import { trackEvent } from "@/lib/analytics";
@@ -43,6 +47,29 @@ export function HeaderAuth() {
   const [success, setSuccess] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    function handleOpenLogin(event: Event) {
+      if (user) {
+        return;
+      }
+
+      const detail = (event as CustomEvent<OpenLoginEventDetail>).detail;
+
+      setError(null);
+      setSuccess(null);
+      setIsModalOpen(true);
+      trackEvent("login_modal_open", {
+        location: detail?.location ?? "external",
+      });
+    }
+
+    window.addEventListener(SONOSIG_OPEN_LOGIN_EVENT, handleOpenLogin);
+
+    return () => {
+      window.removeEventListener(SONOSIG_OPEN_LOGIN_EVENT, handleOpenLogin);
+    };
+  }, [user]);
 
   async function handleSignOut() {
     if (!auth) {
