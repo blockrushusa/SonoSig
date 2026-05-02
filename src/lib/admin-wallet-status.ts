@@ -16,12 +16,20 @@ type WalletConfig = {
   publicAddressEnv?: string;
 };
 
+type RpcCandidate = {
+  fallback: boolean;
+  source: string;
+  url: string;
+};
+
 export type WalletBalance = {
   chain: string;
   native: {
     amount: string | null;
     symbol: string;
   };
+  rpcFallback: boolean;
+  rpcSource: string | null;
   usdc: {
     amount: string | null;
     symbol: "USDC";
@@ -57,8 +65,16 @@ export const ADMIN_WALLETS: WalletConfig[] = [
   },
 ];
 
+const BASE_MAINNET_PUBLIC_RPC_URL = "https://mainnet.base.org";
+
 const CHAINS = [
   {
+    fallbackRpcUrls: [
+      {
+        label: "Base public fallback RPC",
+        url: BASE_MAINNET_PUBLIC_RPC_URL,
+      },
+    ],
     id: "base",
     label: "Base",
     nativeSymbol: "ETH",
@@ -66,6 +82,7 @@ const CHAINS = [
     usdcAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address,
   },
   {
+    fallbackRpcUrls: [],
     id: "ethereum",
     label: "Ethereum",
     nativeSymbol: "ETH",
@@ -176,8 +193,12 @@ async function getAdminWallet(config: WalletConfig): Promise<AdminWallet> {
 }
 
 async function getBalances(address: Address): Promise<WalletBalance[]> {
-  const activeChains = CHAINS.filter((chain) =>
-    chain.rpcEnvNames.some((envName) => process.env[envName]?.trim()),
+  const chainsWithRpcCandidates = CHAINS.map((chain) => ({
+    chain,
+    rpcCandidates: getRpcCandidates(chain),
+  }));
+  const activeChains = chainsWithRpcCandidates.filter(
+    ({ rpcCandidates }) => rpcCandidates.length > 0,
   );
 
   if (activeChains.length === 0) {
@@ -185,6 +206,8 @@ async function getBalances(address: Address): Promise<WalletBalance[]> {
       {
         chain: "Base",
         native: { amount: null, symbol: "ETH" },
+        rpcFallback: false,
+        rpcSource: null,
         usdc: { amount: null, symbol: "USDC" },
         error: "No EVM RPC URL is configured.",
       },
@@ -192,50 +215,62 @@ async function getBalances(address: Address): Promise<WalletBalance[]> {
   }
 
   return Promise.all(
-    activeChains.map(async (chain) => {
-      const rpcUrl = getFirstEnvValue(chain.rpcEnvNames);
-
-      if (!rpcUrl) {
+    activeChains.map(async ({ chain, rpcCandidates }) => {
+      if (!rpcCandidates.length) {
         return {
           chain: chain.label,
           native: { amount: null, symbol: chain.nativeSymbol },
+          rpcFallback: false,
+          rpcSource: null,
           usdc: { amount: null, symbol: "USDC" },
           error: "RPC URL is not configured.",
         };
       }
 
-      try {
-        const client = createPublicClient({ transport: http(rpcUrl) });
-        const [nativeBalance, usdcBalance] = await Promise.all([
-          client.getBalance({ address }),
-          client.readContract({
-            abi: ERC20_BALANCE_ABI,
-            address: chain.usdcAddress,
-            args: [address],
-            functionName: "balanceOf",
-          }),
-        ]);
+      for (const rpcCandidate of rpcCandidates) {
+        try {
+          const client = createPublicClient({
+            transport: http(rpcCandidate.url),
+          });
+          const [nativeBalance, usdcBalance] = await Promise.all([
+            client.getBalance({ address }),
+            client.readContract({
+              abi: ERC20_BALANCE_ABI,
+              address: chain.usdcAddress,
+              args: [address],
+              functionName: "balanceOf",
+            }),
+          ]);
 
-        return {
-          chain: chain.label,
-          native: {
-            amount: formatUnits(nativeBalance, 18),
-            symbol: chain.nativeSymbol,
-          },
-          usdc: {
-            amount: formatUnits(usdcBalance, 6),
-            symbol: "USDC",
-          },
-          error: null,
-        };
-      } catch {
-        return {
-          chain: chain.label,
-          native: { amount: null, symbol: chain.nativeSymbol },
-          usdc: { amount: null, symbol: "USDC" },
-          error: "Unable to read balances from the configured RPC endpoint.",
-        };
+          return {
+            chain: chain.label,
+            native: {
+              amount: formatUnits(nativeBalance, 18),
+              symbol: chain.nativeSymbol,
+            },
+            rpcFallback: rpcCandidate.fallback,
+            rpcSource: rpcCandidate.source,
+            usdc: {
+              amount: formatUnits(usdcBalance, 6),
+              symbol: "USDC",
+            },
+            error: null,
+          };
+        } catch {
+          continue;
+        }
       }
+
+      return {
+        chain: chain.label,
+        native: { amount: null, symbol: chain.nativeSymbol },
+        rpcFallback: false,
+        rpcSource: rpcCandidates.map((candidate) => candidate.source).join(", "),
+        usdc: { amount: null, symbol: "USDC" },
+        error: rpcCandidates.some((candidate) => candidate.fallback)
+          ? "Unable to read balances from configured RPC endpoints or the Base public fallback RPC."
+          : "Unable to read balances from the configured RPC endpoint.",
+      };
     }),
   );
 }
@@ -250,16 +285,30 @@ function getConfiguredAddress(envName: string | undefined) {
   return value && isAddress(value) ? value : null;
 }
 
-function getFirstEnvValue(envNames: string[]) {
-  for (const envName of envNames) {
+function getRpcCandidates(chain: (typeof CHAINS)[number]): RpcCandidate[] {
+  const candidates: RpcCandidate[] = [];
+
+  for (const envName of chain.rpcEnvNames) {
     const value = stripEnvQuotes(process.env[envName]?.trim());
 
     if (value) {
-      return value;
+      candidates.push({
+        fallback: false,
+        source: envName,
+        url: value,
+      });
     }
   }
 
-  return null;
+  for (const fallbackRpcUrl of chain.fallbackRpcUrls) {
+    candidates.push({
+      fallback: true,
+      source: fallbackRpcUrl.label,
+      url: fallbackRpcUrl.url,
+    });
+  }
+
+  return candidates;
 }
 
 function normalizePrivateKey(value: string | undefined) {

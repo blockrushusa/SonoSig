@@ -10,6 +10,8 @@ type WalletBalance = {
     amount: string | null;
     symbol: string;
   };
+  rpcFallback: boolean;
+  rpcSource: string | null;
   usdc: {
     amount: string | null;
     symbol: "USDC";
@@ -280,7 +282,7 @@ function WalletCard({ wallet }: { wallet: AdminWallet }) {
                     {formatBalance(balance.usdc.amount)} USDC
                   </td>
                   <td className="px-4 py-3 text-zinc-400">
-                    {balance.error ?? "Ready"}
+                    {formatBalanceStatus(balance)}
                   </td>
                 </tr>
               ))
@@ -336,6 +338,20 @@ function formatPublicAddressCheck(value: boolean | null) {
   }
 
   return "not applicable";
+}
+
+function formatBalanceStatus(balance: WalletBalance) {
+  if (balance.error) {
+    return balance.error;
+  }
+
+  if (balance.rpcFallback) {
+    return balance.rpcSource
+      ? `Ready via ${balance.rpcSource}`
+      : "Ready via fallback RPC";
+  }
+
+  return balance.rpcSource ? `Ready via ${balance.rpcSource}` : "Ready";
 }
 
 function formatBalance(value: string | null) {
