@@ -25,6 +25,10 @@ For website scanner architecture and usage, see [SonoSig Website Scanner Agent P
 For the completed scanner implementation checklist, see [SonoSig Website Scanner Implementation TODO](./docs/sonosig-website-scanner-implementation-todo.md).
 For the current audio proof container and embedding behavior, see [SonoSig Audio Proof Format](./audio-watermark.md).
 
+## How It's Made
+
+SonoSig is built with Next.js 16, React 19, TypeScript, Tailwind, Firebase Auth/Firestore, RainbowKit/wagmi/viem, and a Node MCP server. The browser handles audio decoding, proof creation, waveform UI, wallet signing, and SONOSIG1 embedding. Server routes handle PacStac registration, ENS/RPC lookups, transaction receipt checks, admin config, and OpenAI-powered support chat. PacStac provides discovery/indexing for signed media claims, ENS provides creator-controlled public pointers, x402 supports paid PacStac API reads on Base, and MCP lets agents verify files, register proofs, prepare ENS records, and run Agentic Scan. The useful hack: audio proofs stay portable inside the file, while ENS points to a wallet-level PacStac collection so one text record can represent a whole catalog instead of one song.
+
 ## Getting Started
 
 First, run the development server:
