@@ -14,6 +14,7 @@ publish an ENS pointer to their PacStac wallet collection.
 - **Audio proof engine:** Browser-side audio decoding, metadata extraction, waveform generation, SONOSIG1 payload embedding, and verification in `src/lib/audio-watermark.ts` and related components.
 - **Provenance services:** PacStac claim registration, ENS `com.sonosig` text-record publishing, and local web3 transaction history for verification status.
 - **x402 payments:** `@x402/fetch` and `@x402/evm` support paid PacStac API reads through the Base x402 wallet. PacStac claim creation still falls back to `PACSTAC_API_KEY` unless PacStac advertises x402 for the claim-write endpoint.
+- **0G Storage:** Optional server-side receipt mirroring with `@0gfoundation/0g-storage-ts-sdk` and `ethers`. When enabled in Admin API config and backed by `ZEROG_STORAGE_PRIVATE_KEY`, the Post Proof modal can upload a compact registration receipt to 0G Storage.
 - **Agent integration:** Model Context Protocol server in `scripts/sonosig-mcp-server.mjs` for encode, verify, PacStac registration, and ENS workflows.
 - **Agentic Scan:** CLI, MCP, and admin-gated web agent for finding SonoSig-encoded audio files on public websites. Specific page URLs are scanned as one page by default; root URLs are crawled as sites.
 - **Deployment and ops:** Firebase App Hosting, Firebase CLI scripts, Firestore rules deployment, and Porkbun DNS sync scripts.
@@ -87,4 +88,5 @@ For Safari and mobile auth notes, see [Firebase Auth on Safari and Mobile](./doc
 - `BASE_X402_WALLET_PRIVATE_KEY` and `BASE_X402_WALLET_PUBLIC_KEY` configure the Base x402 wallet used for paid PacStac reads and admin wallet diagnostics.
 - `BASE_RPC_URL` is preferred for Base balance checks. If it is missing or unavailable, the admin wallet status code falls back to Base's public RPC at `https://mainnet.base.org`.
 - `EVM_MULTI_CHAIN_RPC_URL` and `ETHEREUM_RPC_URL` are used for ENS resolver checks, ENS text-record writes, and Ethereum transaction receipt lookups.
+- `ZEROG_STORAGE_PRIVATE_KEY` enables optional server-side 0G Storage receipt uploads. `ZEROG_STORAGE_RPC_URL`, `ZEROG_STORAGE_INDEXER_RPC`, and `ZEROG_STORAGE_NETWORK` override the default 0G Galileo Testnet endpoints shown in `.env.example`.
 - `OPENAI_API_KEY` and `OPENAI_VECTOR_STORE_ID` power the support chatbot when configured.

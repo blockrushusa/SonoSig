@@ -62,7 +62,12 @@ export default function Home() {
               ENS pointers, verification, transactions, or developer setup.
             </p>
           </div>
-          <SupportChatbot compact />
+          <SupportChatbot
+            compact
+            eyebrow=""
+            showInitialMessage={false}
+            title="Ask Agent Bling about SonoSig"
+          />
         </div>
       </section>
     </main>

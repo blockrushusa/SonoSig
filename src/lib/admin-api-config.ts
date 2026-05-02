@@ -9,10 +9,12 @@ export type PacStacApiMode = (typeof PACSTAC_API_MODES)[number];
 
 export type AdminApiConfig = {
   pacstacApiMode: PacStacApiMode;
+  zeroGStorageEnabled: boolean;
 };
 
 export const DEFAULT_ADMIN_API_CONFIG: AdminApiConfig = {
   pacstacApiMode: "api-key",
+  zeroGStorageEnabled: false,
 };
 
 const API_CONFIG_REF = adminDb.collection("adminSettings").doc("apiConfig");
@@ -37,6 +39,10 @@ export async function getAdminApiConfig(): Promise<AdminApiConfig> {
     pacstacApiMode: isPacStacApiMode(data.pacstacApiMode)
       ? data.pacstacApiMode
       : DEFAULT_ADMIN_API_CONFIG.pacstacApiMode,
+    zeroGStorageEnabled:
+      typeof data.zeroGStorageEnabled === "boolean"
+        ? data.zeroGStorageEnabled
+        : DEFAULT_ADMIN_API_CONFIG.zeroGStorageEnabled,
   };
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { getWalletClient } from "@wagmi/core";
 import { namehash, normalize } from "viem/ens";
 import {
   useAccount,
@@ -16,6 +17,7 @@ import {
   ProofDetailsTabs,
   type ProofDetailsTab,
 } from "@/components/proof-details-tabs";
+import { wagmiConfig } from "@/app/providers";
 import { trackEvent } from "@/lib/analytics";
 import type { ProofPayload } from "@/lib/audio-watermark";
 import { upsertPacStacRegistrationTransaction } from "@/lib/web3-transactions";
@@ -298,6 +300,10 @@ export function PostEnsSignature() {
         await switchChainAsync({ chainId: mainnet.id });
       }
 
+      const mainnetWalletClient = await getWalletClient(wagmiConfig, {
+        chainId: mainnet.id,
+      });
+
       const resolver = await getEnsResolverAddress(normalizedName, publicClient);
       logEnsPost("resolver resolved", {
         ensName: normalizedName,
@@ -318,7 +324,7 @@ export function PostEnsSignature() {
         resolver,
       });
       setStatus("Confirm the ENS text record update in your wallet.");
-      const transactionHash = await walletClient.writeContract({
+      const transactionHash = await mainnetWalletClient.writeContract({
         abi: ENS_TEXT_ABI,
         address: resolver,
         args: [

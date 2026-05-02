@@ -16,7 +16,7 @@ import { useState, type ReactNode } from "react";
 const projectId =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "YOUR_PROJECT_ID";
 
-const config = getDefaultConfig({
+export const wagmiConfig = getDefaultConfig({
   appName: "Sonosig",
   appDescription: "Audio signature verification onchain",
   appUrl: "https://sonosig.com",
@@ -34,7 +34,7 @@ export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={darkTheme()}>{children}</RainbowKitProvider>
       </QueryClientProvider>

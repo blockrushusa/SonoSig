@@ -23,11 +23,19 @@ const initialMessage: ChatMessage = {
 export function SupportChatbot({
   className = "",
   compact = false,
+  eyebrow = "Support assistant",
+  showInitialMessage = true,
+  title = "Ask about SonoSig",
 }: {
   className?: string;
   compact?: boolean;
+  eyebrow?: string;
+  showInitialMessage?: boolean;
+  title?: string;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([initialMessage]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    showInitialMessage ? [initialMessage] : [],
+  );
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,11 +125,13 @@ export function SupportChatbot({
       className={`overflow-hidden rounded-lg border border-cyan-300/20 bg-[#11161d] shadow-2xl shadow-black/30 ${className}`}
     >
       <div className="border-b border-white/10 bg-cyan-300/5 px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">
-          Support assistant
-        </p>
+        {eyebrow ? (
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">
+            {eyebrow}
+          </p>
+        ) : null}
         <h2 className="mt-2 text-xl font-semibold text-white">
-          Ask about SonoSig
+          {title}
         </h2>
       </div>
 

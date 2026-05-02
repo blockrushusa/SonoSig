@@ -1,6 +1,7 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { getWalletClient } from "@wagmi/core";
 import { useEffect, useRef, useState } from "react";
 import { isAddress, type Address, type Hash } from "viem";
 import { namehash, normalize } from "viem/ens";
@@ -12,6 +13,7 @@ import {
   useWalletClient,
 } from "wagmi";
 import { mainnet } from "wagmi/chains";
+import { wagmiConfig } from "@/app/providers";
 import { readAudioMetadata } from "@/lib/audio-metadata";
 import { trackEvent } from "@/lib/analytics";
 import {
@@ -55,7 +57,8 @@ type PostPhase =
   | "idle"
   | "pacstac"
   | "resolving"
-  | "submitted";
+  | "submitted"
+  | "zerog";
 type PacStacRegistration = {
   attestation?: {
     alg?: string;
@@ -71,6 +74,22 @@ type PacStacRegistration = {
   namespace?: string;
   status?: string;
   wallet?: string;
+};
+type ZeroGStorageStatus = {
+  configured: boolean;
+  enabled: boolean;
+  indexerRpc?: string;
+  network?: string;
+  rpcUrl?: string;
+};
+type ZeroGStorageReceipt = {
+  indexerRpc?: string;
+  network?: string;
+  rootHash?: string;
+  rootHashes?: string[];
+  transactionHash?: string;
+  transactionHashes?: string[];
+  uploadedAt?: string;
 };
 
 type EnsResolverClient = {
@@ -125,6 +144,7 @@ export function CreateWatermarkStudio() {
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
   const [shouldPostPacStac, setShouldPostPacStac] = useState(true);
   const [shouldPostEns, setShouldPostEns] = useState(true);
+  const [shouldPostZeroG, setShouldPostZeroG] = useState(false);
   const [shouldDownloadRegistration, setShouldDownloadRegistration] =
     useState(true);
   const [isPostingProof, setIsPostingProof] = useState(false);
@@ -135,6 +155,11 @@ export function CreateWatermarkStudio() {
   );
   const [pacStacPostSuccess, setPacStacPostSuccess] = useState(false);
   const [ensPostSuccess, setEnsPostSuccess] = useState(false);
+  const [zeroGPostSuccess, setZeroGPostSuccess] = useState(false);
+  const [zeroGStorageReceipt, setZeroGStorageReceipt] =
+    useState<ZeroGStorageReceipt | null>(null);
+  const [zeroGStorageStatus, setZeroGStorageStatus] =
+    useState<ZeroGStorageStatus | null>(null);
   const [status, setStatus] = useState("");
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [isEncoding, setIsEncoding] = useState(false);
@@ -190,6 +215,8 @@ export function CreateWatermarkStudio() {
     setPostPhase("idle");
     setPostStatus("");
     setPostTransactionHash(null);
+    setZeroGPostSuccess(false);
+    setZeroGStorageReceipt(null);
     setHasVisualizationPreview(false);
     setEmbeddingProgress(0);
     setEmbeddingSignature("");
@@ -460,14 +487,36 @@ export function CreateWatermarkStudio() {
   function handleOpenPostModal() {
     setShouldPostPacStac(true);
     setShouldPostEns(true);
+    setShouldPostZeroG(false);
     setShouldDownloadRegistration(true);
     setPostPhase("idle");
     setPostStatus("");
     setPostTransactionHash(null);
     setPacStacPostSuccess(false);
     setEnsPostSuccess(false);
+    setZeroGPostSuccess(false);
+    setZeroGStorageReceipt(null);
     setIsPostModalOpen(true);
+    void loadZeroGStorageStatus();
     trackEvent("create_post_modal_open");
+  }
+
+  async function loadZeroGStorageStatus() {
+    try {
+      const response = await fetch("/api/0g/status", { cache: "no-store" });
+      const payload = (await response.json()) as ZeroGStorageStatus;
+
+      if (!response.ok) {
+        throw new Error("Unable to load 0G Storage status.");
+      }
+
+      setZeroGStorageStatus(payload);
+    } catch {
+      setZeroGStorageStatus({
+        configured: false,
+        enabled: false,
+      });
+    }
   }
 
   async function handlePostProof() {
@@ -478,14 +527,15 @@ export function CreateWatermarkStudio() {
 
     if (
       (!shouldPostPacStac || pacStacPostSuccess) &&
-      (!shouldPostEns || ensPostSuccess)
+      (!shouldPostEns || ensPostSuccess) &&
+      (!shouldPostZeroG || zeroGPostSuccess)
     ) {
       setIsPostModalOpen(false);
       return;
     }
 
-    if (!shouldPostPacStac && !shouldPostEns) {
-      setPostStatus("Choose PacStac, ENS, or both.");
+    if (!shouldPostPacStac && !shouldPostEns && !shouldPostZeroG) {
+      setPostStatus("Choose PacStac, ENS, 0G Storage, or a combination.");
       return;
     }
 
@@ -496,22 +546,36 @@ export function CreateWatermarkStudio() {
       return;
     }
 
+    if (
+      shouldPostZeroG &&
+      (!zeroGStorageStatus?.enabled || !zeroGStorageStatus.configured)
+    ) {
+      setPostStatus(
+        "0G Storage is not available. Enable it in Admin API config and configure ZEROG_STORAGE_PRIVATE_KEY.",
+      );
+      return;
+    }
+
     setIsPostingProof(true);
     setPostStatus("");
     setPostTransactionHash(null);
     trackEvent("create_post_start", {
       ens_selected: shouldPostEns,
       pacstac_selected: shouldPostPacStac,
+      zerog_selected: shouldPostZeroG,
     });
 
     try {
       let registration: PacStacRegistration | null =
         getStoredPacStacRegistration(encodedProof);
       let ensTransactionHash: Hash | null = null;
+      let currentZeroGReceipt: ZeroGStorageReceipt | null = zeroGStorageReceipt;
 
       if (shouldPostPacStac && !pacStacPostSuccess) {
         setPostPhase("pacstac");
-        setPostStatus(getPostingStatusLabel(shouldPostPacStac, shouldPostEns));
+        setPostStatus(
+          getPostingStatusLabel(shouldPostPacStac, shouldPostEns, shouldPostZeroG),
+        );
         registration = await registerPacStacClaim(encodedProof);
         storePacStacRegistration(encodedProof, registration);
         setPacStacPostSuccess(true);
@@ -537,11 +601,17 @@ export function CreateWatermarkStudio() {
         }
 
         setPostPhase("resolving");
-        setPostStatus(getPostingStatusLabel(shouldPostPacStac, shouldPostEns));
+        setPostStatus(
+          getPostingStatusLabel(shouldPostPacStac, shouldPostEns, shouldPostZeroG),
+        );
 
         if (chainId !== mainnet.id) {
           await switchChainAsync({ chainId: mainnet.id });
         }
+
+        const mainnetWalletClient = await getWalletClient(wagmiConfig, {
+          chainId: mainnet.id,
+        });
 
         const resolver = await getEnsResolverAddress(
           normalizedName,
@@ -554,7 +624,7 @@ export function CreateWatermarkStudio() {
 
         setPostPhase("confirming-wallet");
         setPostStatus("Confirm the ENS text record update in your wallet.");
-        const transactionHash = await walletClient.writeContract({
+        const transactionHash = await mainnetWalletClient.writeContract({
           abi: ENS_TEXT_ABI,
           address: resolver,
           args: [
@@ -581,26 +651,54 @@ export function CreateWatermarkStudio() {
         void monitorSubmittedEnsTransaction(mainnetPublicClient, transactionHash);
       }
 
+      if (shouldPostZeroG && !zeroGPostSuccess) {
+        setPostPhase("zerog");
+        setPostStatus("Uploading registration receipt to 0G Storage.");
+        const registrationPayload = {
+          ensName: shouldPostEns ? ensName : "",
+          ensTransactionHash,
+          pacstacRegistration: registration,
+          postedToEns: shouldPostEns,
+          postedToPacStac: shouldPostPacStac,
+          postedToZeroG: shouldPostZeroG,
+          zeroGStorageReceipt: null,
+        };
+        currentZeroGReceipt = await uploadZeroGReceipt(
+          encodedProof,
+          registrationPayload,
+        );
+        setZeroGStorageReceipt(currentZeroGReceipt);
+        setZeroGPostSuccess(true);
+        setPostStatus("0G Storage receipt uploaded.");
+        trackEvent("create_post_zerog_success", {
+          network: currentZeroGReceipt.network,
+          root_hash: currentZeroGReceipt.rootHash,
+        });
+      }
+
       setPostPhase("idle");
       setPostStatus(
-        shouldPostEns
+        shouldPostZeroG
+          ? "0G Storage receipt uploaded."
+          : shouldPostEns
           ? "ENS transaction submitted. Track confirmation on Transactions."
           : "",
       );
       if (shouldDownloadRegistration) {
         downloadRegistrationInfo(encodedProof, {
-          ensName: shouldPostEns
-            ? proofMetadata.ens.trim() || encodedProof.ens?.trim() || ""
-            : "",
+          ensName: shouldPostEns ? ensName : "",
           ensTransactionHash,
           pacstacRegistration: registration,
           postedToEns: shouldPostEns,
           postedToPacStac: shouldPostPacStac,
+          postedToZeroG: shouldPostZeroG,
+          zeroGStorageReceipt: currentZeroGReceipt,
         });
       }
       trackEvent("create_post_success", {
         ens_selected: shouldPostEns,
         pacstac_selected: shouldPostPacStac,
+        zerog_selected: shouldPostZeroG,
       });
     } catch (error) {
       const message = formatPostError(error);
@@ -1152,6 +1250,11 @@ export function CreateWatermarkStudio() {
             setProofMetadata((metadata) => ({ ...metadata, ens: value }));
           }}
           onRegistrationDownloadChange={setShouldDownloadRegistration}
+          onZeroGChange={(checked) => {
+            setShouldPostZeroG(checked);
+            setZeroGPostSuccess(false);
+            setZeroGStorageReceipt(null);
+          }}
           onPacStacChange={(checked) => {
             setShouldPostPacStac(checked);
             setPacStacPostSuccess(false);
@@ -1161,7 +1264,10 @@ export function CreateWatermarkStudio() {
           shouldDownloadRegistration={shouldDownloadRegistration}
           shouldPostEns={shouldPostEns}
           shouldPostPacStac={shouldPostPacStac}
+          shouldPostZeroG={shouldPostZeroG}
           status={postStatus}
+          zeroGStatus={zeroGStorageStatus}
+          zeroGSuccess={zeroGPostSuccess}
         />
       ) : null}
     </div>
@@ -1185,12 +1291,16 @@ function PostProofModal({
   onPacStacChange,
   onEnsNameChange,
   onRegistrationDownloadChange,
+  onZeroGChange,
   pacStacSuccess,
   phase,
   shouldDownloadRegistration,
   shouldPostEns,
   shouldPostPacStac,
+  shouldPostZeroG,
   status,
+  zeroGStatus,
+  zeroGSuccess,
 }: {
   ensName: string;
   ensOptions: string[];
@@ -1204,22 +1314,31 @@ function PostProofModal({
   onEnsNameChange: (value: string) => void;
   onPacStacChange: (checked: boolean) => void;
   onRegistrationDownloadChange: (checked: boolean) => void;
+  onZeroGChange: (checked: boolean) => void;
   pacStacSuccess: boolean;
   phase: PostPhase;
   shouldDownloadRegistration: boolean;
   shouldPostEns: boolean;
   shouldPostPacStac: boolean;
+  shouldPostZeroG: boolean;
   status: string;
+  zeroGStatus: ZeroGStorageStatus | null;
+  zeroGSuccess: boolean;
 }) {
-  const canContinue = !isPosting && (shouldPostPacStac || shouldPostEns);
+  const isZeroGAvailable =
+    Boolean(zeroGStatus?.enabled) && Boolean(zeroGStatus?.configured);
+  const canContinue =
+    !isPosting && (shouldPostPacStac || shouldPostEns || shouldPostZeroG);
   const isSelectedFlowComplete =
-    (!shouldPostPacStac || pacStacSuccess) && (!shouldPostEns || ensSuccess);
+    (!shouldPostPacStac || pacStacSuccess) &&
+    (!shouldPostEns || ensSuccess) &&
+    (!shouldPostZeroG || zeroGSuccess);
   const isManualEnsSelected =
     !ensOptions.length || !ensOptions.includes(ensName.trim());
   const phaseLabel =
     phase === "idle"
       ? ""
-      : getPostingStatusLabel(shouldPostPacStac, shouldPostEns);
+      : getPostingStatusLabel(shouldPostPacStac, shouldPostEns, shouldPostZeroG);
 
   return (
     <div
@@ -1392,6 +1511,56 @@ function PostProofModal({
                   ) : null}
                 </div>
               ) : null}
+            </span>
+          </label>
+
+          <label
+            className={
+              zeroGSuccess
+                ? "flex items-start gap-4 rounded-md border border-emerald-300/40 bg-emerald-400/15 p-4 shadow-lg shadow-emerald-950/30"
+                : isZeroGAvailable
+                  ? "flex items-start gap-3 rounded-md border border-white/10 bg-zinc-950/60 p-4"
+                  : "flex items-start gap-3 rounded-md border border-white/10 bg-zinc-950/40 p-4 opacity-70"
+            }
+          >
+            <input
+              checked={shouldPostZeroG}
+              className={zeroGSuccess ? "sr-only" : "mt-1 h-4 w-4 accent-cyan-300"}
+              disabled={isPosting || !isZeroGAvailable}
+              onChange={(event) => onZeroGChange(event.target.checked)}
+              type="checkbox"
+            />
+            {zeroGSuccess ? (
+              <span
+                aria-hidden="true"
+                className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-emerald-300 text-3xl font-bold text-emerald-950"
+              >
+                ✓
+              </span>
+            ) : null}
+            <span>
+              <span
+                className={
+                  zeroGSuccess
+                    ? "block text-base font-semibold text-emerald-50"
+                    : "block text-sm font-semibold text-white"
+                }
+              >
+                {zeroGSuccess ? "0G Storage receipt complete" : "0G Storage"}
+              </span>
+              <span
+                className={
+                  zeroGSuccess
+                    ? "mt-1 block text-sm leading-6 text-emerald-100"
+                    : "mt-1 block text-sm leading-6 text-zinc-400"
+                }
+              >
+                {zeroGSuccess
+                  ? "The registration receipt was uploaded to the 0G network."
+                  : isZeroGAvailable
+                    ? `Mirror the registration receipt to ${zeroGStatus?.network ?? "0G Storage"}.`
+                    : "0G Storage is optional and currently unavailable. Enable it in Admin API config and set the server wallet."}
+              </span>
             </span>
           </label>
 
@@ -2290,6 +2459,33 @@ async function registerPacStacClaim(proof: ProofPayload) {
   return responseBody as PacStacRegistration;
 }
 
+async function uploadZeroGReceipt(
+  proof: ProofPayload,
+  registration: Record<string, unknown>,
+) {
+  const response = await fetch("/api/0g/sonosig/receipts", {
+    body: JSON.stringify({ proof, registration }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  const responseBody = (await response.json()) as
+    | ZeroGStorageReceipt
+    | { error?: string };
+
+  if (!response.ok) {
+    const message =
+      "error" in responseBody && responseBody.error
+        ? responseBody.error
+        : "Unable to upload receipt to 0G Storage.";
+
+    throw new Error(message);
+  }
+
+  return responseBody as ZeroGStorageReceipt;
+}
+
 function storePacStacRegistration(
   proof: ProofPayload | null,
   registration: PacStacRegistration,
@@ -2345,16 +2541,30 @@ function getStoredPacStacRegistration(proof: ProofPayload | null) {
   }
 }
 
-function getPostingStatusLabel(shouldPostPacStac: boolean, shouldPostEns: boolean) {
-  if (shouldPostPacStac && shouldPostEns) {
-    return "Registering with PacStac and ENS";
+function getPostingStatusLabel(
+  shouldPostPacStac: boolean,
+  shouldPostEns: boolean,
+  shouldPostZeroG: boolean,
+) {
+  const targets = [
+    shouldPostPacStac ? "PacStac" : "",
+    shouldPostEns ? "ENS" : "",
+    shouldPostZeroG ? "0G Storage" : "",
+  ].filter(Boolean);
+
+  if (!targets.length) {
+    return "";
   }
 
-  if (shouldPostEns) {
-    return "Registering with ENS";
+  return `Registering with ${formatConjunction(targets)}`;
+}
+
+function formatConjunction(values: string[]) {
+  if (values.length <= 2) {
+    return values.join(" and ");
   }
 
-  return "Registering with PacStac";
+  return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
 }
 
 function buildPacStacWalletPointer(wallet: string | undefined) {
@@ -2373,13 +2583,11 @@ function downloadRegistrationInfo(
     pacstacRegistration: PacStacRegistration | null;
     postedToEns: boolean;
     postedToPacStac: boolean;
+    postedToZeroG: boolean;
+    zeroGStorageReceipt: ZeroGStorageReceipt | null;
   },
 ) {
-  const body = {
-    generatedAt: new Date().toISOString(),
-    proof,
-    registration,
-  };
+  const body = buildRegistrationPayload(proof, registration);
   const blob = new Blob([JSON.stringify(body, null, 2)], {
     type: "application/json",
   });
@@ -2395,6 +2603,25 @@ function downloadRegistrationInfo(
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function buildRegistrationPayload(
+  proof: ProofPayload,
+  registration: {
+    ensName: string;
+    ensTransactionHash: Hash | null;
+    pacstacRegistration: PacStacRegistration | null;
+    postedToEns: boolean;
+    postedToPacStac: boolean;
+    postedToZeroG: boolean;
+    zeroGStorageReceipt: ZeroGStorageReceipt | null;
+  },
+) {
+  return {
+    generatedAt: new Date().toISOString(),
+    proof,
+    registration,
+  };
 }
 
 function storeSubmittedEnsTransaction({

@@ -48,8 +48,15 @@ export async function PUT(request: Request) {
       return jsonError("Choose a valid PacStac API mode.", 400);
     }
 
+    if (typeof body.zeroGStorageEnabled !== "boolean") {
+      return jsonError("Choose whether 0G Storage is enabled.", 400);
+    }
+
     await saveAdminApiConfig(
-      { pacstacApiMode: body.pacstacApiMode },
+      {
+        pacstacApiMode: body.pacstacApiMode,
+        zeroGStorageEnabled: body.zeroGStorageEnabled,
+      },
       admin.email,
     );
 
@@ -71,6 +78,9 @@ async function buildApiConfigResponse() {
     capabilities: {
       pacstacApiKeyConfigured: Boolean(process.env.PACSTAC_API_KEY?.trim()),
       x402WalletConfigured: Boolean(baseX402Wallet?.privateKeyConfigured),
+      zeroGStorageConfigured: Boolean(
+        process.env.ZEROG_STORAGE_PRIVATE_KEY?.trim(),
+      ),
     },
     config,
     generatedAt: new Date().toISOString(),

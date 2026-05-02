@@ -39,9 +39,11 @@ type ApiConfigResponse = {
   capabilities: {
     pacstacApiKeyConfigured: boolean;
     x402WalletConfigured: boolean;
+    zeroGStorageConfigured: boolean;
   };
   config: {
     pacstacApiMode: PacStacApiMode;
+    zeroGStorageEnabled: boolean;
   };
   generatedAt: string;
   wallets: {
@@ -71,6 +73,7 @@ export function AdminApiConfig() {
   const { user } = useAuthUser();
   const [config, setConfig] = useState<ApiConfigResponse["config"]>({
     pacstacApiMode: "api-key",
+    zeroGStorageEnabled: false,
   });
   const [capabilities, setCapabilities] =
     useState<ApiConfigResponse["capabilities"] | null>(null);
@@ -251,7 +254,8 @@ export function AdminApiConfig() {
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
               Choose how SonoSig talks to the PacStac API and monitor the Base
-              x402 wallet used for paid requests.
+              x402 wallet used for paid requests. Enable optional 0G Storage
+              receipts when the server wallet is configured.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -318,7 +322,10 @@ export function AdminApiConfig() {
                     className="mt-1 h-4 w-4 accent-cyan-300"
                     disabled={isLoading || isSaving}
                     onChange={() =>
-                      setConfig({ pacstacApiMode: option.value })
+                      setConfig((currentConfig) => ({
+                        ...currentConfig,
+                        pacstacApiMode: option.value,
+                      }))
                     }
                     type="radio"
                   />
@@ -344,6 +351,69 @@ export function AdminApiConfig() {
               }
             >
               {activeModeStatus}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="grid gap-5 rounded-lg border border-white/10 bg-white/[0.04] p-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">
+              0G Storage
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold text-white">
+              Optional receipt mirror
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-zinc-400">
+              When enabled, creators can upload a compact SonoSig registration
+              receipt to 0G Storage after posting a proof. The receipt includes
+              the signed proof plus PacStac and ENS posting details.
+            </p>
+          </div>
+
+          <label
+            className={
+              config.zeroGStorageEnabled
+                ? "rounded-lg border border-cyan-300/50 bg-cyan-300/10 p-4"
+                : "rounded-lg border border-white/10 bg-zinc-950/50 p-4"
+            }
+          >
+            <span className="flex items-start gap-3">
+              <input
+                checked={config.zeroGStorageEnabled}
+                className="mt-1 h-4 w-4 accent-cyan-300"
+                disabled={isLoading || isSaving}
+                onChange={(event) =>
+                  setConfig((currentConfig) => ({
+                    ...currentConfig,
+                    zeroGStorageEnabled: event.target.checked,
+                  }))
+                }
+                type="checkbox"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-white">
+                  Enable 0G Storage option
+                </span>
+                <span className="mt-2 block text-sm leading-6 text-zinc-400">
+                  Adds a 0G Storage checkbox to the Post Proof modal. Uploads
+                  use the server wallet configured by
+                  ZEROG_STORAGE_PRIVATE_KEY.
+                </span>
+              </span>
+            </span>
+          </label>
+
+          {capabilities ? (
+            <div
+              className={
+                capabilities.zeroGStorageConfigured
+                  ? "rounded-md border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100"
+                  : "rounded-md border border-amber-300/30 bg-amber-400/10 p-4 text-sm text-amber-100"
+              }
+            >
+              {capabilities.zeroGStorageConfigured
+                ? "ZEROG_STORAGE_PRIVATE_KEY is configured. 0G uses ZEROG_STORAGE_RPC_URL and ZEROG_STORAGE_INDEXER_RPC when present."
+                : "ZEROG_STORAGE_PRIVATE_KEY is not configured. The creator-facing 0G option will stay unavailable until the server wallet is set."}
             </div>
           ) : null}
         </section>
