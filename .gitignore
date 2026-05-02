@@ -44,6 +44,7 @@ ui-debug.log*
 .firebase/
 *-firebase-adminsdk-*.json
 sonosig-dotcom-firebase-adminsdk-fbsvc-3cd3f83bc9.json
+docs/zerog-storage-wallet.json
 
 # typescript
 *.tsbuildinfo

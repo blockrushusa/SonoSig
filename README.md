@@ -30,6 +30,42 @@ For the current audio proof container and embedding behavior, see [SonoSig Audio
 
 SonoSig is built with Next.js 16, React 19, TypeScript, Tailwind, Firebase Auth/Firestore, RainbowKit/wagmi/viem, and a Node MCP server. The browser handles audio decoding, proof creation, waveform UI, wallet signing, and SONOSIG1 embedding. Server routes handle PacStac registration, ENS/RPC lookups, transaction receipt checks, admin config, and OpenAI-powered support chat. PacStac provides discovery/indexing for signed media claims, ENS provides creator-controlled public pointers, x402 supports paid PacStac API reads on Base, and MCP lets agents verify files, register proofs, prepare ENS records, and run Agentic Scan. The useful hack: audio proofs stay portable inside the file, while ENS points to a wallet-level PacStac collection so one text record can represent a whole catalog instead of one song.
 
+## 0G Storage
+
+SonoSig can optionally use the 0G network as a decentralized storage mirror for
+registration receipts. This does not replace the embedded SonoSig proof,
+PacStac registration, or ENS pointer. Instead, it gives a creator another
+portable receipt location for the same claim context.
+
+When 0G Storage is enabled in `/admin/api-config`, the Post Proof modal shows a
+`0G Storage` checkbox. If selected, the server uploads a compact JSON receipt to
+0G Storage after the selected PacStac and ENS actions run. The receipt includes
+the SonoSig proof payload, posting metadata, PacStac registration details when
+available, ENS transaction details when available, and the generated timestamp.
+The browser receives the 0G root hash and transaction hash and can include them
+in the downloaded registration JSON.
+
+Important boundaries:
+
+- The original audio file is not uploaded to 0G by this integration.
+- Private keys stay server-side in environment variables or ignored local files.
+- 0G receipt uploads require a funded EVM-compatible 0G Galileo Testnet wallet.
+- 0G is optional; if it is disabled or unfunded, PacStac, ENS, verification, and
+  local registration downloads continue to work.
+
+The default testnet endpoints in `.env.example` are taken from the 0G Storage
+SDK flow:
+
+```env
+ZEROG_STORAGE_RPC_URL=https://evmrpc-testnet.0g.ai
+ZEROG_STORAGE_INDEXER_RPC=https://indexer-storage-testnet-turbo.0g.ai
+ZEROG_STORAGE_NETWORK=0G Galileo Testnet
+```
+
+Generate or provide a dedicated server wallet, fund its public address with 0G
+Galileo testnet gas, set `ZEROG_STORAGE_PRIVATE_KEY` in `.env.local` or the
+hosting secret manager, then enable 0G Storage in the admin API config.
+
 ## Getting Started
 
 First, run the development server:
