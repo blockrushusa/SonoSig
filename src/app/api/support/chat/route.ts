@@ -19,7 +19,7 @@ Core facts:
 - Creators can encode a proof into an audio file, sign the proof with a wallet, verify it later,
   and optionally register discovery signals with PacStac and ENS.
 - PacStac registration makes signed claims discoverable and indexable for agents/apps.
-- ENS can publish a pointer to a SonoSig/PacStac claim under a creator-controlled ENS name.
+- ENS can publish the creator-level com.sonosig pointer to a PacStac wallet collection under a creator-controlled ENS name.
 - SonoSig verifies technical provenance signals. It does not prove legal copyright ownership,
   settle ownership disputes, recover wallets, reverse blockchain transactions, or delete public
   on-chain/third-party records.

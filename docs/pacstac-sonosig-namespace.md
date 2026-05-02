@@ -1,6 +1,6 @@
 # PacStac SonoSig Namespace Proposal
 
-Last updated: 2026-04-28
+Last updated: 2026-05-01
 
 ## Purpose
 
@@ -193,7 +193,7 @@ SonoSig has a server-only `PACSTAC_API_KEY`. It should never be exposed to brows
 Suggested create endpoint:
 
 ```http
-POST /v1/namespaces/sonosig/claims
+POST /api/v1/namespaces/sonosig/claims
 Authorization: Bearer <PACSTAC_API_KEY>
 Content-Type: application/json
 ```
@@ -243,11 +243,12 @@ Response:
 Suggested lookup endpoints:
 
 ```http
-GET /v1/namespaces/sonosig/claims/:claimId
-GET /v1/namespaces/sonosig/claims?wallet=0x...
-GET /v1/namespaces/sonosig/claims?audioHash=sha256:...
-GET /v1/namespaces/sonosig/claims?audioFingerprint=sha256:...
-GET /v1/namespaces/sonosig/claims?isrc=USXXX2500001
+GET /api/v1/namespaces/sonosig/claims/:claimId
+GET /api/v1/namespaces/sonosig/claims?wallet=0x...
+GET /api/v1/namespaces/sonosig/claims?audioHash=sha256:...
+GET /api/v1/namespaces/sonosig/claims?audioFingerprint=sha256:...
+GET /api/v1/namespaces/sonosig/claims?isrc=USXXX2500001
+GET /api/v1/namespaces/sonosig/wallets/:wallet/claims
 ```
 
 ## SonoSig Product Flow
@@ -261,8 +262,9 @@ Recommended user flow:
 5. SonoSig embeds the proof into the exported audio file.
 6. SonoSig asks whether to register the signed track with PacStac.
 7. On opt-in, SonoSig sends the proof payload to a server route.
-8. Server route uses `PACSTAC_API_KEY` to create the PacStac `sonosig` claim.
+8. Server route creates the PacStac `sonosig` claim. Current production behavior still needs `PACSTAC_API_KEY` for claim creation unless PacStac advertises x402 payment requirements for this endpoint.
 9. SonoSig stores the returned `claimId` with the local proof and displays PacStac status.
+10. If the user also posts to ENS, SonoSig writes `com.sonosig = pacstac:wallet:<wallet>` so one ENS name can point to the wallet's full PacStac SonoSig collection.
 
 ## Verification UX
 
@@ -280,6 +282,19 @@ Registered wallet: 0x...
 Verified creator namespaces: ENS, domain
 PacStac claim: sonosig:sha256:...
 ```
+
+## ENS Collection Pointer
+
+SonoSig now treats ENS as a creator-level discovery pointer instead of a
+single-song pointer:
+
+```txt
+com.sonosig = pacstac:wallet:0x1234567890abcdef1234567890abcdef12345678
+```
+
+PacStac should resolve this pointer to the wallet's `sonosig` namespace
+collection. This avoids overloading the one `com.sonosig` ENS text record with
+one specific song claim.
 
 ## Revocation and Replacement
 
@@ -321,6 +336,8 @@ Suggested controls:
 - Should PacStac accept optional audio file verification in v1, or keep v1 claim-only?
 - Should rights transfers be modeled as revocation plus replacement, or as a separate transfer event?
 - Should SonoSig claim lookup be public by default?
+- Should `pacstac:wallet:<address>` become an official PacStac URI scheme with both public HTML and machine-readable API resolution?
+- Should PacStac advertise x402 payment requirements for SonoSig claim writes, or keep writes API-key-only and reserve x402 for paid reads?
 
 ## Minimal V1 Scope
 
@@ -333,5 +350,6 @@ The smallest useful PacStac integration:
 5. Store status and evidence.
 6. Expose lookup by claim ID, wallet, `audio_hash`, and `audio_fingerprint`.
 7. Return a PacStac signed attestation for verified claims.
+8. Resolve `pacstac:wallet:<address>` to a paginated wallet-level SonoSig claim collection.
 
 This gives SonoSig public registration and third-party lookup without requiring PacStac to process audio files in the first version.

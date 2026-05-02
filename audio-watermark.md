@@ -1,281 +1,173 @@
-# Audio SIWE Watermark Specification (v1)
+# SonoSig Audio Proof Format
 
-## 1. Overview
+Last reviewed: 2026-05-01
 
-This specification defines a method to embed a **robust, non-removable watermark** into an audio file that links the audio to a **SIWE (Sign-In With Ethereum) attestation**.
+This document describes the current SonoSig audio proof implementation in this
+repository. It is not a future robust watermarking proposal.
 
-The system is designed to:
+## Overview
 
-* Survive metadata stripping
-* Survive lossy compression (MP3, AAC)
-* Bind audio content to a wallet identity
-* Enable deterministic, offline-verifiable proofs
+SonoSig creates a wallet-signed provenance proof for an audio file and embeds
+that proof into an exported audio artifact. The proof is designed to be readable
+by the browser app, the MCP server, the website scanner agent, and future
+registry/indexing systems.
 
----
+SonoSig verifies technical provenance signals:
 
-## 2. Architecture
+- a valid EVM wallet signature over a deterministic SonoSig message
+- the wallet address that signed the proof
+- the embedded proof payload
+- the normalized PCM audio hash where the format supports exact checking
+- optional public discovery records in PacStac and ENS
 
-```
-Audio File
-  └── Embedded Watermark (small payload, robust)
+SonoSig does not prove legal copyright ownership.
 
-External Attestation (off-audio)
-  ├── SIWE Message (EIP-4361)
-  ├── Signature
-  ├── Wallet Address
-  ├── Audio Fingerprint
-  └── Metadata (timestamps, revocation)
-```
+## Current Container
 
----
+Every embedded proof uses the `SONOSIG1` container:
 
-## 3. Design Principles
+| Bytes | Meaning |
+|---|---|
+| `0..7` | ASCII magic string `SONOSIG1`. |
+| `8..11` | Unsigned 32-bit little-endian JSON payload length. |
+| `12..n` | UTF-8 JSON proof payload. |
 
-* **Do NOT embed full SIWE signature in audio**
-* **Embed only a compact identifier**
-* **Store full proof externally**
-* **Bind via audio fingerprint**
-* **Prioritize robustness over payload size**
+The browser docs currently describe a 16 KB payload maximum for the proof block.
 
----
+## Proof Payload
 
-## 4. Watermark Payload Specification
+Current payloads use protocol `audio-proof-v1` and version `1`.
 
-### 4.1 Binary Structure
-
-| Field          | Size       | Description              |
-| -------------- | ---------- | ------------------------ |
-| Magic Prefix   | 4 bytes    | ASCII `"SIWE"`           |
-| Version        | 1 byte     | `0x01`                   |
-| Attestation ID | 8–16 bytes | Unique identifier        |
-| Checksum       | 4 bytes    | CRC32 of preceding bytes |
-| Reserved       | Optional   | Future use               |
-
----
-
-### 4.2 Encoded Example
-
-```
-SIWE1:7F3K9Q2D:b7d9c0e4
-```
-
----
-
-### 4.3 JSON Representation (Reference Only)
+Core fields:
 
 ```json
 {
   "v": 1,
-  "id": "siwe_7F3K9Q2D",
-  "chk": "b7d9c0e4"
-}
-```
-
----
-
-## 5. External Attestation Format
-
-The full SIWE proof MUST be stored externally (IPFS, HTTPS endpoint, or database).
-
-```json
-{
-  "type": "siwe-audio-attestation",
-  "version": 1,
-  "attestation_id": "siwe_7F3K9Q2D",
+  "protocol": "audio-proof-v1",
   "wallet": "0x...",
+  "address": "0x...",
   "chain_id": 1,
-  "siwe_message": "...",
-  "signature": "0x...",
+  "chainId": 1,
+  "audio_hash": "sha256:...",
   "audio_fingerprint": "sha256:...",
-  "created_at": "2026-04-24T19:00:00Z",
-  "expires_at": null,
-  "revoked": false
+  "audioFingerprint": "sha256:...",
+  "issued_at": "2026-05-01T00:00:00.000Z",
+  "issuedAt": "2026-05-01T00:00:00.000Z",
+  "nonce": "...",
+  "domain": "sonosig.com",
+  "uri": "https://sonosig.com",
+  "statement": "Create a Sonosig wallet-linked proof payload for this local audio file.",
+  "signature_type": "SIWE",
+  "signature": "0x..."
 }
 ```
 
----
+Optional fields include:
 
-## 6. Audio Fingerprinting
+- `ens`
+- `manifest`
+- `chain`
+- `verifiedBy`
+- `sourceFileName`
+- `song` metadata such as title, artist, album, ISRC, genre, BPM, key, and notes
 
-### 6.1 Requirements
+## Signing Message
 
-Fingerprint MUST:
+The signature is an EVM wallet signature over a deterministic SIWE-style
+SonoSig message. The message includes:
 
-* Represent audio content only (no metadata)
-* Be deterministic
-* Be stable across encoding formats where possible
+- domain and URI
+- wallet/address
+- chain ID and optional chain name
+- protocol
+- audio fingerprint
+- audio hash
+- nonce
+- issued timestamp
+- signature type
+- optional ENS, manifest, song metadata, and verified-by value
 
----
+Verifiers must rebuild the exact message from the payload and recover the
+signing wallet from `signature`.
 
-### 6.2 Recommended Methods
+## Audio Hashing
 
-* SHA-256 of normalized PCM audio
-* Chromaprint (AcoustID-style)
-* Spectral hash
+SonoSig derives `audio_hash` and `audio_fingerprint` from normalized PCM sample
+data in the browser. Verification can recompute exact PCM hashes for supported
+PCM exports.
 
----
+Current exact audio-hash verification is strongest for:
 
-### 6.3 Canonicalization Process
+- WAV
+- AIFF
 
-Before hashing:
+For compressed exports, SonoSig can still extract and validate the embedded
+proof block, but exact sample hash comparison may be unavailable or may report
+that audio changed after encoding.
 
-1. Decode audio to PCM
-2. Normalize sample rate (e.g., 44.1kHz)
-3. Normalize amplitude
-4. Strip silence if required (optional but consistent)
+## Embedding
 
----
+### WAV and AIFF
 
-## 7. Watermark Embedding
+For PCM WAV and AIFF exports, SonoSig embeds the `SONOSIG1` block into the least
+significant bit of sequential 16-bit PCM samples. Each payload byte is written
+least-significant bit first.
 
-### 7.1 Technique
+Verification reads the same sample sequence, reconstructs the `SONOSIG1` header
+and payload, validates the proof, and recomputes the PCM hash where possible.
 
-Use **spread-spectrum watermarking**:
+### M4A and OGG
 
-* Encode bits across frequency bins using FFT
-* Distribute bits pseudo-randomly (seeded)
-* Keep signal below perceptual threshold
+For M4A and OGG exports, SonoSig appends the `SONOSIG1` proof block to the
+encoded file bytes. This keeps the proof portable, but exact audio-hash
+verification is not as strong as PCM WAV/AIFF because lossy encoders can change
+sample data.
 
----
+### MCP Encoding
 
-### 7.2 Requirements
+The MCP server currently appends a `SONOSIG1` proof block to the target audio
+file. It does not create wallet signatures. The proof must already be signed.
 
-Watermark MUST:
+## Verification Statuses
 
-* Be inaudible
-* Survive:
+Verification surfaces commonly use these statuses:
 
-  * MP3/AAC compression
-  * Volume normalization
-  * Mild EQ adjustments
-  * Partial trimming
+| Status | Meaning |
+|---|---|
+| `verified` | The proof was found and the recomputed PCM audio hash matched. |
+| `changed_after_encoding` | The proof was found, but a recomputed PCM hash did not match. |
+| `not_checked` | The proof was found, but exact PCM hash verification was unavailable. |
+| `not_sonosig_encoded` | No valid `SONOSIG1` proof was found. |
+| `verification_failed` | A proof or candidate file could not be parsed or verified. |
 
----
+## PacStac Registration
 
-### 7.3 Redundancy Strategy
+SonoSig can submit the signed proof to PacStac under the `sonosig` namespace.
+PacStac verifies/indexes the claim for public discovery by wallet, claim ID,
+audio hash, audio fingerprint, ENS, and song metadata where available.
 
-* Repeat payload every 5–10 seconds
-* Interleave bits across time + frequency
-* Use majority voting on decode
+Current claim creation still needs server-side PacStac API-key support unless
+PacStac advertises x402 payment support for that write endpoint. x402 mode is
+used for paid PacStac reads and can attempt paid requests when supported.
 
----
+## ENS Discovery
 
-### 7.4 Error Correction
+SonoSig uses one ENS text record as a creator-level discovery pointer:
 
-Use Forward Error Correction (FEC):
-
-Recommended:
-
-* Reed-Solomon
-* BCH codes
-
----
-
-## 8. Watermark Extraction
-
-### 8.1 Extraction Flow
-
-```
-1. Decode audio to PCM
-2. Scan for watermark signal
-3. Extract repeated payload blocks
-4. Apply error correction
-5. Validate checksum
-6. Recover attestation_id
-```
-
----
-
-### 8.2 Robustness Strategy
-
-* Use sliding window detection
-* Aggregate multiple payload recoveries
-* Accept payload if checksum-valid majority exists
-
----
-
-## 9. Verification Flow
-
-```
-1. Extract watermark → attestation_id
-2. Fetch external attestation
-3. Verify SIWE signature
-4. Recompute audio fingerprint
-5. Compare fingerprint with attestation
-6. Confirm:
-   - signature valid
-   - fingerprint matches
-   - attestation not revoked
+```txt
+com.sonosig = pacstac:wallet:0x1234567890abcdef1234567890abcdef12345678
 ```
 
----
+This points agents and apps to the creator wallet's PacStac collection. It does
+not point to one song. The one-record-per-wallet design lets a single ENS name
+represent many SonoSig audio claims.
 
-## 10. Security Model
+## Security and Limitations
 
-### 10.1 Guarantees
-
-* Wallet ownership proven via SIWE signature
-* Audio integrity bound via fingerprint
-* Tampering detectable
-
----
-
-### 10.2 Threat Mitigation
-
-| Threat            | Mitigation                  |
-| ----------------- | --------------------------- |
-| Metadata removal  | Watermark embedded in audio |
-| Re-encoding       | Spread-spectrum robustness  |
-| Watermark copying | Fingerprint mismatch        |
-| Identity forgery  | SIWE signature verification |
-
----
-
-## 11. Limitations
-
-* Payload capacity is small (~32–128 bits effective)
-* Aggressive audio transformations may degrade recovery
-* Not resistant to targeted watermark removal attacks
-* Requires external lookup for full verification
-
----
-
-## 12. Implementation Notes
-
-### 12.1 Suggested Stack
-
-* Python: librosa, numpy, scipy (prototype)
-* C++: FFTW (production)
-* Rust: real-time DSP pipelines
-* JS: WebAudio API (lightweight decoding)
-
----
-
-### 12.2 Embedding Approach (Simplified)
-
-* FFT audio frame
-* Slightly bias magnitude of selected bins to encode bits
-* Inverse FFT
-* Repeat across frames
-
----
-
-### 12.3 Extraction Approach (Simplified)
-
-* FFT frames
-* Measure energy differences in known bins
-* Reconstruct bitstream
-* Apply FEC + checksum validation
-
----
-
-## 13. Summary
-
-```
-Audio → carries watermark (attestation_id)
-Attestation → carries SIWE proof
-Fingerprint → binds audio to proof
-```
-
-This creates a **portable, tamper-resistant, and deterministic**
-link between an audio asset and a wallet identity.
+- SonoSig proves a wallet signed a specific proof payload.
+- SonoSig does not prove copyright ownership or resolve authorship disputes.
+- PCM LSB embedding is not a robust anti-removal watermark.
+- M4A/OGG appended proof blocks may be stripped by file transformations.
+- Exact audio-hash verification is format-dependent.
+- Public PacStac, ENS, blockchain, wallet, and RPC systems can be unavailable or
+  delayed independently of SonoSig.

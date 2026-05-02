@@ -1,6 +1,9 @@
-# Sonosig
+# SonoSig
 
-Next.js application bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+SonoSig is an agent-accessible identity and trust system for media, starting
+with audio. Creators can encode a wallet-signed proof into an audio file,
+verify embedded proofs later, register discovery signals with PacStac, and
+publish an ENS pointer to their PacStac wallet collection.
 
 ## Tech Stack
 
@@ -10,14 +13,17 @@ Next.js application bootstrapped with [`create-next-app`](https://nextjs.org/doc
 - **Wallet integration:** RainbowKit, wagmi, and viem for wallet connection, SIWE signatures, ENS reads/writes, transaction receipts, and EVM utilities.
 - **Audio proof engine:** Browser-side audio decoding, metadata extraction, waveform generation, SONOSIG1 payload embedding, and verification in `src/lib/audio-watermark.ts` and related components.
 - **Provenance services:** PacStac claim registration, ENS `com.sonosig` text-record publishing, and local web3 transaction history for verification status.
-- **x402 payments:** `@x402/fetch` and `@x402/evm` support paid PacStac API access through the Base x402 wallet.
+- **x402 payments:** `@x402/fetch` and `@x402/evm` support paid PacStac API reads through the Base x402 wallet. PacStac claim creation still falls back to `PACSTAC_API_KEY` unless PacStac advertises x402 for the claim-write endpoint.
 - **Agent integration:** Model Context Protocol server in `scripts/sonosig-mcp-server.mjs` for encode, verify, PacStac registration, and ENS workflows.
-- **Agentic Scan:** CLI, MCP, and admin agent for finding SonoSig-encoded audio files on public websites.
+- **Agentic Scan:** CLI, MCP, and admin-gated web agent for finding SonoSig-encoded audio files on public websites. Specific page URLs are scanned as one page by default; root URLs are crawled as sites.
 - **Deployment and ops:** Firebase App Hosting, Firebase CLI scripts, Firestore rules deployment, and Porkbun DNS sync scripts.
+
+Developer docs are available in the app at `/docs`, with encoding details at `/docs/encoding` and ENS/PacStac discovery details at `/docs/ens`. The generated sitemap is served by the Next.js App Router at `/sitemap.xml`.
 
 For MCP client setup, tool behavior, and agent safety rules, see [SonoSig MCP Agent Guide](./docs/sonosig-mcp-agent-guide.md).
 For website scanner architecture and usage, see [SonoSig Website Scanner Agent Plan](./docs/sonosig-website-scanner-agent-plan.md).
 For the completed scanner implementation checklist, see [SonoSig Website Scanner Implementation TODO](./docs/sonosig-website-scanner-implementation-todo.md).
+For the current audio proof container and embedding behavior, see [SonoSig Audio Proof Format](./audio-watermark.md).
 
 ## Getting Started
 
@@ -39,9 +45,12 @@ Run a public website scan for SonoSig-encoded audio:
 
 ```bash
 npm run scan:website -- --url https://example.com --max-pages 25
+npm run scan:website -- --url https://example.com/path/to/page --scan-scope page
 ```
 
-You can start editing the page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
+Use `--scan-scope auto` by default. In auto mode, root URLs scan as sites and specific page URLs scan as a single page.
+
+You can start editing the main page by modifying `src/app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load Geist.
 
@@ -67,3 +76,11 @@ This project is wired for Firebase Authentication, Cloud Firestore, local emulat
 Firebase App Hosting uses `apphosting.yaml` from the repository root. Connect the GitHub repo to an App Hosting backend in Firebase, then pushes to the live branch can trigger rollouts.
 
 For Safari and mobile auth notes, see [Firebase Auth on Safari and Mobile](./docs/firebase-auth-safari.md).
+
+## Key Environment Notes
+
+- `PACSTAC_API_KEY` is still required for SonoSig claim creation unless PacStac advertises x402 support for the claim-write endpoint.
+- `BASE_X402_WALLET_PRIVATE_KEY` and `BASE_X402_WALLET_PUBLIC_KEY` configure the Base x402 wallet used for paid PacStac reads and admin wallet diagnostics.
+- `BASE_RPC_URL` is preferred for Base balance checks. If it is missing or unavailable, the admin wallet status code falls back to Base's public RPC at `https://mainnet.base.org`.
+- `EVM_MULTI_CHAIN_RPC_URL` and `ETHEREUM_RPC_URL` are used for ENS resolver checks, ENS text-record writes, and Ethereum transaction receipt lookups.
+- `OPENAI_API_KEY` and `OPENAI_VECTOR_STORE_ID` power the support chatbot when configured.

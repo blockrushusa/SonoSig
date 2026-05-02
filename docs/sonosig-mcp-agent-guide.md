@@ -11,6 +11,7 @@ The SonoSig MCP server lets an agent work with signed SonoSig audio proofs outsi
 - Register a signed SonoSig proof with PacStac.
 - Prepare the ENS `com.sonosig` text-record value.
 - Submit an ENS text-record transaction when explicitly confirmed.
+- Scan a public website or specific page for audio files that carry SonoSig proofs.
 
 The server does not create wallet signatures for users. A proof must already be signed by a wallet before it can be encoded or registered.
 
@@ -86,6 +87,7 @@ The server currently exposes these tools:
 | `sonosig_submit_pacstac` | Registers a signed proof with PacStac. | Sends network request to PacStac. |
 | `sonosig_prepare_ens_record` | Builds the compact ENS record value. | No write. |
 | `sonosig_submit_ens` | Writes the ENS `com.sonosig` text record. | Sends Ethereum mainnet transaction; requires `confirm: true`. |
+| `sonosig_scan_website` | Runs the Agentic Scan website/page scanner. | Fetches public pages/audio within configured safety limits. |
 
 ## Proof Payload Requirements
 
@@ -205,6 +207,7 @@ Agent notes:
 - Use this only after verifying the proof payload is the intended one.
 - Preserve PacStac response fields such as claim ID, status, and idempotency state in your final answer or local receipt.
 - If PacStac returns a duplicate/idempotent response, treat it as an existing registration rather than an error unless the user is disputing the claim.
+- This MCP tool currently uses API-key authentication. The browser/API route can attempt x402 when configured, but PacStac claim writes still require `PACSTAC_API_KEY` unless PacStac advertises x402 support for the claim creation endpoint.
 
 ### `sonosig_prepare_ens_record`
 
@@ -264,6 +267,47 @@ Agent notes:
 - The configured private key must control or manage the ENS name.
 - If receipt polling times out, preserve the transaction hash and instruct the user to check the explorer or retry receipt status later.
 
+### `sonosig_scan_website`
+
+Scans a public website or specific page for audio files and reports which files
+contain SonoSig proofs.
+
+Input:
+
+```json
+{
+  "url": "https://example.com/path/to/page",
+  "maxPages": 25,
+  "maxDepth": 2,
+  "scanScope": "auto",
+  "respectRobots": true,
+  "includeExternalAudio": true
+}
+```
+
+`scanScope` values:
+
+| Value | Behavior |
+|---|---|
+| `auto` | Root URLs scan as sites; specific page URLs scan as one page. |
+| `page` | Scan only the supplied page URL. |
+| `site` | Crawl the supplied URL as a site entry point within limits. |
+
+Output includes:
+
+- `summary`
+- `results`
+- `errors`
+- `advancedDiscovery`
+- `markdown`
+
+Agent notes:
+
+- Respect `robots.txt` unless the user has a clear right to scan and explicitly requests an override.
+- Do not bypass authentication, paywalls, private networks, or access controls.
+- Use `allowPrivateHosts` only for local/owned test targets.
+- A file with `sonosig_payload_found_audio_changed` still contains a SonoSig proof, but the audio hash no longer matches the embedded proof.
+
 ## Recommended Agent Workflows
 
 ### Verify an encoded file
@@ -307,6 +351,17 @@ Agent notes:
 4. Call `sonosig_submit_ens` with `confirm: true`.
 5. Return the transaction hash and receipt status.
 
+### Run Agentic Scan
+
+1. Confirm the user wants to scan a public website or specific page.
+2. Choose `scanScope`:
+   - use `page` for a specific article/page URL
+   - use `site` for a whole-site crawl
+   - use `auto` when the user did not specify
+3. Call `sonosig_scan_website`.
+4. Report total pages, audio files, SonoSig proofs found, changed-audio findings, skipped files, and errors.
+5. Include the Markdown summary when useful.
+
 ## Safety Rules for Agents
 
 - Never ask users for seed phrases, private keys, passwords, or full payment card numbers.
@@ -329,6 +384,7 @@ Agent notes:
 | `This ENS name has no resolver configured` | ENS name cannot accept text records yet. | Configure a resolver in ENS Manager. |
 | `confirm=true is required` | Agent attempted ENS write without explicit confirmation. | Ask user to confirm before sending an on-chain transaction. |
 | `BASE_X402_WALLET_PUBLIC_KEY does not match` | Safety mismatch between expected and actual configured key. | Fix env vars before sending ENS transactions. |
+| Scanner finds a proof but verified count is lower | The proof was found, but audio hash status is `changed_after_encoding` or `not_checked`. | Report it as a SonoSig proof finding, then explain the hash status. |
 
 ## Smoke Test
 

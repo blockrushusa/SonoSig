@@ -10,6 +10,7 @@ Implemented surfaces:
 - Shared scanner engine: `scripts/sonosig-website-scanner.mjs`
 - MCP tool: `sonosig_scan_website`
 - Admin dashboard: `/admin/website-scanner`
+- Admin-gated route alias: `/website-scanner`
 - Admin API: `/api/admin/website-scan`
 
 Implemented milestones:
@@ -22,6 +23,7 @@ Implemented milestones:
 - `robots.txt`, rate limit, redirects, sitemap, RSS/feed, manifest, and optional Playwright headless discovery.
 - Scheduled CLI scans with baseline comparison alerts.
 - Admin dashboard scan view.
+- Scan scope control: `auto`, `page`, or `site`. In `auto`, a specific page URL scans only that page, while a root URL scans as a site.
 
 ## Goal
 
@@ -34,6 +36,7 @@ Create an agent that accepts a website URL, crawls reachable pages, finds audio 
 - Root website URL.
 - Optional max pages.
 - Optional max depth.
+- Optional scan scope: `auto`, `page`, or `site`.
 - Optional allowed domains.
 - Optional file size limit.
 - Optional auth/session headers in a later version.
@@ -73,6 +76,9 @@ Build a crawler that:
 - Handles relative URLs.
 - Avoids duplicate URLs.
 - Records where each audio URL was found.
+- In `page` scope, scans only the supplied page and does not enqueue other same-site links.
+- In `site` scope, crawls reachable pages within `maxPages` and `maxDepth`.
+- In `auto` scope, treats root/home URLs as site scans and specific page URLs as page-only scans.
 
 Recommended data model:
 
@@ -250,7 +256,7 @@ Best first version:
 Later expose it as:
 
 - MCP tool: `sonosig_scan_website`
-- Admin page.
+- Admin-gated web page.
 - API endpoint.
 - Scheduled monitoring job.
 
@@ -288,7 +294,6 @@ Later expose it as:
 ## 11. Open Questions
 
 - Should the scanner strictly obey `robots.txt`, or allow an override for sites the user owns?
-- What is the default max audio file size?
-- Should the first version scan only same-origin audio, or also CDN-hosted audio referenced by the site?
 - Should verified proof data be stored in Firestore or only emitted as a local report?
 - Should the scanner support authenticated scans for creator-owned dashboards later?
+- Should public, non-admin users eventually get a limited scanner UI separate from the admin-gated route?

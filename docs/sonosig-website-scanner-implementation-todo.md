@@ -99,6 +99,8 @@ Granular checklist for the full website scanner implementation.
 - [x] Support non-zero alert exit with `--fail-on-alert`.
 - [x] Support output directory selection.
 - [x] Support crawl, size, robot, headless, same-origin, and private-host flags.
+- [x] Support `--scan-scope auto|page|site`.
+- [x] In auto scope, scan specific page URLs as one page and root URLs as sites.
 - [x] Print Markdown report to stdout.
 - [x] Write `scan-report.json`.
 - [x] Write `scan-report.md`.
@@ -124,7 +126,8 @@ Granular checklist for the full website scanner implementation.
 - [x] Render result rows.
 - [x] Highlight SonoSig proof findings.
 - [x] Render Markdown report preview.
-- [x] Add Website scanner to Admin menu.
+- [x] Add Agentic Scan to Admin menu.
+- [x] Add admin-gated `/website-scanner` route alias.
 
 ## Docs
 
