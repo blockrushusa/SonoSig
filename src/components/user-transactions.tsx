@@ -49,6 +49,9 @@ export function UserTransactions() {
   const ensTransactions = sortedTransactions.filter(
     (transaction) => transaction.type === "ens-text-record",
   );
+  const zeroGTransactions = sortedTransactions.filter(
+    (transaction) => transaction.type === "zero-g-storage",
+  );
 
   const reloadTransactions = useCallback(() => {
     setTransactions(getWeb3Transactions());
@@ -203,9 +206,10 @@ export function UserTransactions() {
               Transactions
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
-              Web3 actions submitted from this browser, including ENS updates
-              and any detected failures. Non-confirmed on-chain transactions are
-              checked when this page loads.
+              Web3 actions submitted from this browser, including PacStac
+              registrations, ENS updates, 0G Storage receipts, and any detected
+              failures. Non-confirmed Ethereum transactions are checked when
+              this page loads.
             </p>
           </div>
           <button
@@ -224,11 +228,12 @@ export function UserTransactions() {
           </div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <MetricCard label="Total" value={sortedTransactions.length} />
           <MetricCard label="Submitted" value={submittedTransactions.length} />
           <MetricCard label="PacStac" value={pacStacTransactions.length} />
           <MetricCard label="ENS" value={ensTransactions.length} />
+          <MetricCard label="0G" value={zeroGTransactions.length} />
         </div>
 
         {failures.length ? (
@@ -270,7 +275,7 @@ export function UserTransactions() {
           </section>
         ) : null}
 
-        <section className="grid min-w-0 gap-5 xl:grid-cols-2">
+        <section className="grid min-w-0 gap-5 xl:grid-cols-3">
           <HistorySection
             emptyText="No PacStac registrations have been recorded from this browser."
             isCompletingId={checkingTransactionId}
@@ -284,6 +289,13 @@ export function UserTransactions() {
             onComplete={completeTransaction}
             title="ENS transactions"
             transactions={ensTransactions}
+          />
+          <HistorySection
+            emptyText="No 0G Storage receipts have been recorded from this browser."
+            isCompletingId={checkingTransactionId}
+            onComplete={completeTransaction}
+            title="0G Storage receipts"
+            transactions={zeroGTransactions}
           />
         </section>
 
@@ -377,6 +389,13 @@ function TransactionRow({
   onComplete: (transaction: Web3Transaction) => void;
   transaction: Web3Transaction;
 }) {
+  const actionHref = getTransactionActionHref(transaction);
+  const actionLabel =
+    transaction.type === "pacstac-registration" && !transaction.hash
+      ? "PacStac"
+      : "View";
+  const networkHref = getTransactionNetworkHref(transaction);
+
   return (
     <article className="min-w-0 rounded-lg border border-white/10 bg-zinc-950/45 p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -389,13 +408,7 @@ function TransactionRow({
             <StatusPill status={transaction.status} />
           </div>
           <p className="mt-2 min-w-0 overflow-wrap-anywhere text-sm text-zinc-400 [overflow-wrap:anywhere]">
-            {transaction.type === "pacstac-registration"
-              ? transaction.claimId
-                ? `Claim ID: ${transaction.claimId}`
-                : "Registered signed proof"
-              : transaction.ensName
-              ? `ENS: ${transaction.ensName}`
-              : transaction.network}
+            {getTransactionSummary(transaction)}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -413,35 +426,22 @@ function TransactionRow({
                   : "Complete"}
             </button>
           ) : null}
-          {transaction.hash ? (
+          {actionHref ? (
             <a
               className="rounded-md border border-cyan-300/30 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:border-cyan-200 hover:text-white"
-              href={`https://etherscan.io/tx/${transaction.hash}`}
+              href={actionHref}
               rel="noreferrer"
               target="_blank"
             >
-              View
+              {actionLabel}
             </a>
-          ) : (
-            <a
-              className="rounded-md border border-cyan-300/30 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:border-cyan-200 hover:text-white"
-              href="https://pacstac.com/?utm_source=sonosig&utm_medium=transactions&utm_campaign=audio_provenance"
-              rel="noreferrer"
-              target="_blank"
-            >
-              PacStac
-            </a>
-          )}
+          ) : null}
         </div>
       </div>
 
       <div className="mt-5 grid min-w-0 gap-3 text-sm md:grid-cols-2">
         <InfoRow
-          href={
-            transaction.type === "pacstac-registration"
-              ? "https://pacstac.com/?utm_source=sonosig&utm_medium=transactions_network&utm_campaign=audio_provenance"
-              : undefined
-          }
+          href={networkHref}
           label="Network"
           value={transaction.network}
         />
@@ -457,6 +457,25 @@ function TransactionRow({
         {transaction.registrationStatus ? (
           <InfoRow label="PacStac status" value={transaction.registrationStatus} />
         ) : null}
+        {transaction.rootHash ? (
+          <InfoRow label="0G root hash" value={transaction.rootHash} />
+        ) : null}
+        {transaction.rootHashes?.length ? (
+          <InfoRow label="0G root hashes" value={transaction.rootHashes.join(", ")} />
+        ) : null}
+        {transaction.transactionHashes?.length ? (
+          <InfoRow
+            label="0G transaction hashes"
+            value={transaction.transactionHashes.join(", ")}
+          />
+        ) : null}
+        {transaction.indexerRpc ? (
+          <InfoRow
+            href={transaction.indexerRpc}
+            label="0G indexer"
+            value={transaction.indexerRpc}
+          />
+        ) : null}
         {transaction.proofAudioHash ? (
           <InfoRow label="Audio hash" value={transaction.proofAudioHash} />
         ) : null}
@@ -471,6 +490,52 @@ function TransactionRow({
   );
 }
 
+function getTransactionSummary(transaction: Web3Transaction) {
+  if (transaction.type === "pacstac-registration") {
+    return transaction.claimId
+      ? `Claim ID: ${transaction.claimId}`
+      : "Registered signed proof";
+  }
+
+  if (transaction.type === "zero-g-storage") {
+    return transaction.rootHash
+      ? `0G root: ${transaction.rootHash}`
+      : "Registration receipt uploaded to 0G Storage";
+  }
+
+  return transaction.ensName ? `ENS: ${transaction.ensName}` : transaction.network;
+}
+
+function getTransactionActionHref(transaction: Web3Transaction) {
+  if (transaction.type === "zero-g-storage") {
+    return transaction.hash
+      ? `https://chainscan-galileo.0g.ai/tx/${transaction.hash}`
+      : getTransactionNetworkHref(transaction);
+  }
+
+  if (transaction.hash) {
+    return `https://etherscan.io/tx/${transaction.hash}`;
+  }
+
+  if (transaction.type === "pacstac-registration") {
+    return "https://pacstac.com/?utm_source=sonosig&utm_medium=transactions&utm_campaign=audio_provenance";
+  }
+
+  return undefined;
+}
+
+function getTransactionNetworkHref(transaction: Web3Transaction) {
+  if (transaction.type === "pacstac-registration") {
+    return "https://pacstac.com/?utm_source=sonosig&utm_medium=transactions_network&utm_campaign=audio_provenance";
+  }
+
+  if (transaction.type === "zero-g-storage") {
+    return "https://chainscan-galileo.0g.ai/";
+  }
+
+  return undefined;
+}
+
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
@@ -481,10 +546,17 @@ function MetricCard({ label, value }: { label: string; value: number }) {
 }
 
 function ServicePill({ type }: { type: Web3Transaction["type"] }) {
-  const label = type === "pacstac-registration" ? "PacStac" : "ENS";
+  const label =
+    type === "pacstac-registration"
+      ? "PacStac"
+      : type === "zero-g-storage"
+        ? "0G"
+        : "ENS";
   const className =
     type === "pacstac-registration"
       ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-100"
+      : type === "zero-g-storage"
+        ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100"
       : "border-violet-300/30 bg-violet-400/10 text-violet-100";
 
   return (

@@ -38,6 +38,7 @@ import {
   updateWeb3Transaction,
   upsertPacStacRegistrationTransaction,
   upsertWeb3Transaction,
+  upsertZeroGStorageTransaction,
 } from "@/lib/web3-transactions";
 
 type EncodedAudio = {
@@ -606,12 +607,27 @@ export function CreateWatermarkStudio() {
         );
 
         if (chainId !== mainnet.id) {
+          setPostStatus("Switch to Ethereum mainnet to update this ENS record.");
           await switchChainAsync({ chainId: mainnet.id });
         }
 
-        const mainnetWalletClient = await getWalletClient(wagmiConfig, {
-          chainId: mainnet.id,
-        });
+        let mainnetWalletClient;
+
+        try {
+          mainnetWalletClient = await getWalletClient(wagmiConfig, {
+            chainId: mainnet.id,
+          });
+        } catch (walletClientError) {
+          if (!isNetworkSwitchError(walletClientError)) {
+            throw walletClientError;
+          }
+
+          setPostStatus("Switch to Ethereum mainnet to update this ENS record.");
+          await switchChainAsync({ chainId: mainnet.id });
+          mainnetWalletClient = await getWalletClient(wagmiConfig, {
+            chainId: mainnet.id,
+          });
+        }
 
         const resolver = await getEnsResolverAddress(
           normalizedName,
@@ -668,6 +684,18 @@ export function CreateWatermarkStudio() {
           registrationPayload,
         );
         setZeroGStorageReceipt(currentZeroGReceipt);
+        upsertZeroGStorageTransaction({
+          claimId: registration?.claimId,
+          createdAt: currentZeroGReceipt.uploadedAt,
+          hash: currentZeroGReceipt.transactionHash,
+          indexerRpc: currentZeroGReceipt.indexerRpc,
+          network: currentZeroGReceipt.network,
+          proofAudioHash: encodedProof.audio_hash,
+          rootHash: currentZeroGReceipt.rootHash,
+          rootHashes: currentZeroGReceipt.rootHashes,
+          transactionHashes: currentZeroGReceipt.transactionHashes,
+          wallet: encodedProof.wallet,
+        });
         setZeroGPostSuccess(true);
         setPostStatus("0G Storage receipt uploaded.");
         trackEvent("create_post_zerog_success", {
@@ -2821,9 +2849,7 @@ function formatPostError(error: unknown) {
   }
 
   if (
-    normalizedMessage.includes("wrong network") ||
-    normalizedMessage.includes("chain mismatch") ||
-    normalizedMessage.includes("switch chain")
+    isNetworkSwitchMessage(normalizedMessage)
   ) {
     return "Switch to Ethereum mainnet to update this ENS record.";
   }
@@ -2837,6 +2863,21 @@ function formatPostError(error: unknown) {
   return cleanedMessage
     ? truncateEnd(cleanedMessage, 160)
     : "Unable to post this proof.";
+}
+
+function isNetworkSwitchError(error: unknown) {
+  return isNetworkSwitchMessage(getErrorMessage(error).toLowerCase());
+}
+
+function isNetworkSwitchMessage(normalizedMessage: string) {
+  return (
+    normalizedMessage.includes("wrong network") ||
+    normalizedMessage.includes("chain mismatch") ||
+    normalizedMessage.includes("switch chain") ||
+    normalizedMessage.includes("current chain of the connector") ||
+    normalizedMessage.includes("does not match the connection") ||
+    normalizedMessage.includes("expected chain id")
+  );
 }
 
 function getErrorMessage(error: unknown) {

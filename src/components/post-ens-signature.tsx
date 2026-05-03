@@ -297,12 +297,30 @@ export function PostEnsSignature() {
           currentChainId: chainId,
           targetChainId: mainnet.id,
         });
+        setStatus("Switch to Ethereum mainnet to update this ENS record.");
         await switchChainAsync({ chainId: mainnet.id });
       }
 
-      const mainnetWalletClient = await getWalletClient(wagmiConfig, {
-        chainId: mainnet.id,
-      });
+      let mainnetWalletClient;
+
+      try {
+        mainnetWalletClient = await getWalletClient(wagmiConfig, {
+          chainId: mainnet.id,
+        });
+      } catch (walletClientError) {
+        if (!isNetworkSwitchError(walletClientError)) {
+          throw walletClientError;
+        }
+
+        logEnsPost("retrying chain switch after connector mismatch", {
+          targetChainId: mainnet.id,
+        });
+        setStatus("Switch to Ethereum mainnet to update this ENS record.");
+        await switchChainAsync({ chainId: mainnet.id });
+        mainnetWalletClient = await getWalletClient(wagmiConfig, {
+          chainId: mainnet.id,
+        });
+      }
 
       const resolver = await getEnsResolverAddress(normalizedName, publicClient);
       logEnsPost("resolver resolved", {
@@ -1087,9 +1105,7 @@ function formatEnsPostError(error: unknown) {
   }
 
   if (
-    normalizedMessage.includes("wrong network") ||
-    normalizedMessage.includes("chain mismatch") ||
-    normalizedMessage.includes("switch chain")
+    isNetworkSwitchMessage(normalizedMessage)
   ) {
     return "Switch to Ethereum mainnet to update this ENS record.";
   }
@@ -1103,6 +1119,21 @@ function formatEnsPostError(error: unknown) {
   return cleanedMessage
     ? truncateEnd(cleanedMessage, 160)
     : "Unable to update the ENS text record.";
+}
+
+function isNetworkSwitchError(error: unknown) {
+  return isNetworkSwitchMessage(getErrorMessage(error).toLowerCase());
+}
+
+function isNetworkSwitchMessage(normalizedMessage: string) {
+  return (
+    normalizedMessage.includes("wrong network") ||
+    normalizedMessage.includes("chain mismatch") ||
+    normalizedMessage.includes("switch chain") ||
+    normalizedMessage.includes("current chain of the connector") ||
+    normalizedMessage.includes("does not match the connection") ||
+    normalizedMessage.includes("expected chain id")
+  );
 }
 
 function getErrorMessage(error: unknown) {

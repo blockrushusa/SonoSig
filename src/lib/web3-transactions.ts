@@ -9,13 +9,17 @@ export type Web3Transaction = {
   hash?: string;
   id: string;
   idempotent?: boolean;
+  indexerRpc?: string;
   namespace?: string;
   network: string;
   proofAudioHash?: string;
   registrationStatus?: string;
+  rootHash?: string;
+  rootHashes?: string[];
   status: Web3TransactionStatus;
   title: string;
-  type: "ens-text-record" | "pacstac-registration";
+  transactionHashes?: string[];
+  type: "ens-text-record" | "pacstac-registration" | "zero-g-storage";
   updatedAt: string;
   wallet?: string;
 };
@@ -107,6 +111,22 @@ export function createPacStacRegistrationTransactionId(parameters: {
   return `pacstac:${parameters.proofAudioHash ?? "unknown"}`;
 }
 
+export function createZeroGStorageTransactionId(parameters: {
+  proofAudioHash?: string;
+  rootHash?: string;
+  transactionHash?: string;
+}) {
+  if (parameters.rootHash) {
+    return `zerog:${parameters.rootHash}`;
+  }
+
+  if (parameters.transactionHash) {
+    return `zerog:${parameters.transactionHash.toLowerCase()}`;
+  }
+
+  return `zerog:${parameters.proofAudioHash ?? "unknown"}`;
+}
+
 export function upsertPacStacRegistrationTransaction(parameters: {
   claimId?: string;
   createdAt?: string;
@@ -138,6 +158,43 @@ export function upsertPacStacRegistrationTransaction(parameters: {
   });
 }
 
+export function upsertZeroGStorageTransaction(parameters: {
+  claimId?: string;
+  createdAt?: string;
+  hash?: string;
+  indexerRpc?: string;
+  network?: string;
+  proofAudioHash?: string;
+  rootHash?: string;
+  rootHashes?: string[];
+  transactionHashes?: string[];
+  wallet?: string;
+}) {
+  const now = new Date().toISOString();
+
+  upsertWeb3Transaction({
+    claimId: parameters.claimId,
+    createdAt: parameters.createdAt ?? now,
+    hash: parameters.hash,
+    id: createZeroGStorageTransactionId({
+      proofAudioHash: parameters.proofAudioHash,
+      rootHash: parameters.rootHash,
+      transactionHash: parameters.hash,
+    }),
+    indexerRpc: parameters.indexerRpc,
+    network: parameters.network ?? "0G Storage",
+    proofAudioHash: parameters.proofAudioHash,
+    rootHash: parameters.rootHash,
+    rootHashes: parameters.rootHashes,
+    status: "confirmed",
+    title: "0G Storage receipt upload",
+    transactionHashes: parameters.transactionHashes,
+    type: "zero-g-storage",
+    updatedAt: now,
+    wallet: parameters.wallet,
+  });
+}
+
 function isWeb3Transaction(value: unknown): value is Web3Transaction {
   if (!value || typeof value !== "object") {
     return false;
@@ -151,7 +208,8 @@ function isWeb3Transaction(value: unknown): value is Web3Transaction {
     typeof transaction.createdAt === "string" &&
     typeof transaction.updatedAt === "string" &&
     (transaction.type === "ens-text-record" ||
-      transaction.type === "pacstac-registration") &&
+      transaction.type === "pacstac-registration" ||
+      transaction.type === "zero-g-storage") &&
     (transaction.type !== "ens-text-record" ||
       typeof transaction.hash === "string") &&
     (transaction.status === "submitted" ||
