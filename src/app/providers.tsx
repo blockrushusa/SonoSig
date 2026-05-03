@@ -35,6 +35,8 @@ export const zeroGGalileo = defineChain({
       url: "https://chainscan-galileo.0g.ai",
     },
   },
+  iconBackground: "#070A0F",
+  iconUrl: "/0g-network.svg",
   testnet: true,
 });
 
