@@ -75,8 +75,9 @@ export default function AboutPage() {
                 About SonoSig
               </h1>
               <p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-300">
-                Sonosig is a work in progress for the ETHGlobal Open Agents 2026
-                Hackathon. Developed by Blockrush.
+                SonoSig helps creators attach wallet-signed provenance to audio
+                files, making attribution easier to verify as music moves across
+                collaborators, platforms, and licensing workflows.
               </p>
               <Link
                 className="mt-8 inline-flex rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200"
